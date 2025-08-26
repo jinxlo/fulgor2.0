@@ -70,6 +70,13 @@ class Config:
     SUPPORT_BOARD_API_TOKEN = os.environ.get('SUPPORT_BOARD_API_TOKEN')
     SUPPORT_BOARD_WEBHOOK_SECRET = os.environ.get('SUPPORT_BOARD_WEBHOOK_SECRET')
     SUPPORT_BOARD_DM_BOT_USER_ID = os.environ.get('SUPPORT_BOARD_DM_BOT_USER_ID')
+    
+    # +++ START OF FIX +++
+    # Department IDs for conversation routing
+    SUPPORT_BOARD_SALES_DEPARTMENT_ID = os.environ.get('SUPPORT_BOARD_SALES_DEPARTMENT_ID')
+    SUPPORT_BOARD_SUPPORT_DEPARTMENT_ID = os.environ.get('SUPPORT_BOARD_SUPPORT_DEPARTMENT_ID')
+    # +++ END OF FIX +++
+
     COMMENT_BOT_PROXY_USER_ID = os.environ.get('COMMENT_BOT_PROXY_USER_ID')
     COMMENT_BOT_INITIATION_TAG = os.environ.get('COMMENT_BOT_INITIATION_TAG')
     _agent_ids_str = os.environ.get('SUPPORT_BOARD_AGENT_IDS', '')

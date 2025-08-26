@@ -12,8 +12,9 @@ from openai import AzureOpenAI
 from config.config import Config
 from services import product_service, support_board_service, lead_api_client, thread_mapping_service
 from utils import db_utils
+from utils.logging_utils import get_conversation_loggers # +++ ADDED IMPORT
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) # This remains for module-level logging
 
 class AzureAssistantProvider:
     """
@@ -38,12 +39,13 @@ class AzureAssistantProvider:
 
     def _get_or_create_thread_id(self, sb_conversation_id: str) -> str:
         """Gets or creates a thread_id using the correct Azure client."""
+        server_logger, _ = get_conversation_loggers(sb_conversation_id)
         thread_id = thread_mapping_service.get_thread_id(
             sb_conversation_id=sb_conversation_id,
             provider=self.provider_name
         )
         if not thread_id:
-            logger.info(f"No existing thread for Conv {sb_conversation_id} (Provider: {self.provider_name}). Creating new.")
+            server_logger.info(f"No existing thread for Conv {sb_conversation_id} (Provider: {self.provider_name}). Creating new.")
             thread = self.client.beta.threads.create()
             thread_id = thread.id
             thread_mapping_service.store_thread_id(
@@ -72,6 +74,7 @@ class AzureAssistantProvider:
         new_user_message: Optional[str],
         conversation_data: Dict[str, Any]
     ) -> Optional[str]:
+        server_logger, _ = get_conversation_loggers(sb_conversation_id)
         lock_key = f"lock:conv:{sb_conversation_id}"
         with self.redis.lock(lock_key, timeout=self.run_timeout_seconds + 10, blocking_timeout=60):
             try:
@@ -83,7 +86,7 @@ class AzureAssistantProvider:
                         thread_id=thread_id, role="user", content=bundled_message
                     )
                 else:
-                    logger.warning(f"No new user message content to process for Conv {sb_conversation_id}. Skipping.")
+                    server_logger.warning(f"No new user message content to process for Conv {sb_conversation_id}. Skipping.")
                     return None
 
                 run = self.client.beta.threads.runs.create(
@@ -91,7 +94,7 @@ class AzureAssistantProvider:
                     assistant_id=self.assistant_id,
                     instructions=Config.SYSTEM_PROMPT
                 )
-                logger.info(f"Created Azure Run {run.id} for Thread {thread_id}.")
+                server_logger.info(f"Created Azure Run {run.id} for Thread {thread_id}.")
 
                 start_time = time.time()
                 while time.time() - start_time < self.run_timeout_seconds:
@@ -106,7 +109,8 @@ class AzureAssistantProvider:
                     if run.status == 'requires_action':
                         tool_outputs = self._execute_tool_calls(
                             tool_calls=run.required_action.submit_tool_outputs.tool_calls,
-                            sb_conversation_id=sb_conversation_id
+                            sb_conversation_id=sb_conversation_id,
+                            server_logger=server_logger
                         )
                         self.client.beta.threads.runs.submit_tool_outputs(
                             thread_id=thread_id,
@@ -115,51 +119,48 @@ class AzureAssistantProvider:
                         )
                     
                     if run.status in ('failed', 'cancelled', 'expired'):
-                        logger.error(f"Azure Run {run.id} ended with status {run.status}: {run.last_error}")
+                        server_logger.error(f"Azure Run {run.id} ended with status {run.status}: {run.last_error}")
                         return f"Lo siento, la operación en Azure falló: {run.status}."
 
                     time.sleep(self.polling_interval_seconds)
 
-                logger.error(f"Azure Run {run.id} timed out after {self.run_timeout_seconds}s.")
+                server_logger.error(f"Azure Run {run.id} timed out after {self.run_timeout_seconds}s.")
                 return "Lo siento, la operación en Azure tardó demasiado."
 
             except Exception as e:
-                logger.exception(f"[AzureAssistant Provider] Error for Conv {sb_conversation_id}: {e}")
+                server_logger.exception(f"[AzureAssistant Provider] Error for Conv {sb_conversation_id}: {e}")
                 return "Ocurrió un error inesperado con nuestro asistente de Azure."
 
-    def _execute_tool_calls(self, tool_calls: List[Any], sb_conversation_id: str) -> List[Dict[str, str]]:
+    def _execute_tool_calls(self, tool_calls: List[Any], sb_conversation_id: str, server_logger: logging.Logger) -> List[Dict[str, str]]:
         """
         Executes tool calls requested by the assistant.
         """
         tool_outputs = []
         for tool_call in tool_calls:
             function_name = tool_call.function.name
-            logger.info(f"[{self.provider_name} Provider] Tool requested: {function_name} with args: {tool_call.function.arguments}")
+            server_logger.info(f"[{self.provider_name} Provider] Tool requested: {function_name} with args: {tool_call.function.arguments}")
             
             try:
                 args = json.loads(tool_call.function.arguments)
                 function_response = {}
 
-                # +++ START OF FIX +++
                 if function_name == "search_vehicle_batteries":
                     with db_utils.get_db_session() as session:
-                        # The `find_batteries_for_vehicle` function already returns the data
-                        # in the exact dictionary format the AI needs.
                         results = product_service.find_batteries_for_vehicle(
                             db_session=session,
                             vehicle_make=args.get("make"),
                             vehicle_model=args.get("model"),
                             vehicle_year=args.get("year")
                         )
-                    # We simply pass the results directly without reformatting them.
                     function_response = {"batteries_found": results}
-                # +++ END OF FIX +++
                 
                 elif function_name == "get_cashea_financing_options":
                     with db_utils.get_db_session() as session:
                         function_response = product_service.get_cashea_financing_options(
                             session=session,
-                            product_price=args.get("product_price")
+                            product_price=args.get("product_price"),
+                            user_level=args.get("user_level"),
+                            apply_discount=args.get("apply_discount", False)
                         )
 
                 elif function_name == "submit_order_for_processing":
@@ -186,9 +187,13 @@ class AzureAssistantProvider:
                     else:
                         function_response = {"status": "error", "message": lead_intent_res.get("error_message")}
 
-                elif function_name == "request_human_agent":
-                    db_utils.pause_conversation_for_duration(sb_conversation_id, duration_seconds=3600)
-                    function_response = {"status": "success", "message": "Conversation paused for human intervention."}
+                elif function_name == "route_to_sales_department":
+                    support_board_service.route_conversation_to_sales(sb_conversation_id)
+                    function_response = {"status": "success", "message": "Conversation has been routed to the Sales department."}
+                
+                elif function_name == "route_to_human_support":
+                    support_board_service.route_conversation_to_support(sb_conversation_id)
+                    function_response = {"status": "success", "message": "Conversation has been routed to the Support department."}
                 
                 else:
                     function_response = {"status": "error", "message": f"Herramienta desconocida '{function_name}'."}
@@ -199,7 +204,7 @@ class AzureAssistantProvider:
                 })
 
             except Exception as e:
-                logger.exception(f"Error executing tool {function_name}: {e}")
+                server_logger.exception(f"Error executing tool {function_name}: {e}")
                 tool_outputs.append({
                     "tool_call_id": tool_call.id,
                     "output": json.dumps({"status": "error", "message": str(e)})

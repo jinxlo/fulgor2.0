@@ -4871,7 +4871,7 @@
         "compatible_battery_model_codes": [
             {
                 "brand": "Black Edition",
-                "model_code": "94R-1100AGM"
+                "model_code": "94R-1100"
             }
         ]
     },
@@ -4911,7 +4911,7 @@
         "compatible_battery_model_codes": [
             {
                 "brand": "Fulgor",
-                "model_code": "41MR-900AGM"
+                "model_code": "41MR-900"
             }
         ]
     },

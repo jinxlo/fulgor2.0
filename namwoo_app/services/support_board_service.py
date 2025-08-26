@@ -87,13 +87,39 @@ def get_sb_conversation_data(conversation_id: str) -> Optional[Dict]:
         logger.error(f"Failed to fetch or parse valid conversation data dictionary for SB conversation {conversation_id}. Raw response from _call_sb_api call was not a valid dictionary: {response_data}")
         return None
 
+# +++ NEW PUBLIC FUNCTION: Get User Details +++
+def get_sb_user_details(user_id: str) -> Optional[Dict]:
+    """
+    Fetches the full user details, including extra fields, from Support Board.
+    """
+    if not user_id:
+        logger.warning("get_sb_user_details called with no user_id.")
+        return None
+    
+    payload = {
+        'function': 'get-user',
+        'user_id': user_id,
+        'extra': 'true'
+    }
+    logger.info(f"Attempting to fetch full user details from SB API for User ID: {user_id}")
+    response_data = _call_sb_api(payload)
+    
+    # The API returns `false` if the user is not found, which _call_sb_api translates to None
+    if isinstance(response_data, dict):
+        logger.info(f"Successfully fetched user details for User ID: {user_id}")
+        return response_data
+    else:
+        logger.error(f"Failed to fetch or parse valid user details for User ID: {user_id}. API response: {response_data}")
+        return None
+# +++ END OF NEW FUNCTION +++
+
 # --- PRIVATE HELPER: Get User PSID (for FB/IG) ---
 # (Kept unchanged from your original)
 def _get_user_psid(user_id: str) -> Optional[str]:
     """Fetches user details and extracts the PSID (Facebook/Instagram ID)."""
     logger.info(f"Attempting to fetch user details for User ID: {user_id} to get PSID.")
-    payload = {'function': 'get-user', 'user_id': user_id, 'extra': 'true'}
-    user_data = _call_sb_api(payload)
+    # MODIFIED: Uses the new public function for consistency
+    user_data = get_sb_user_details(user_id)
     if user_data and isinstance(user_data, dict):
         details_list = user_data.get('details', [])
         expected_slug = 'facebook-id' # As per common SB setup, adjust if different
@@ -127,12 +153,9 @@ def _get_user_waid(user_id: str) -> Optional[str]:
     logger.info(f"Attempting to get WAID for User ID: {user_id}. ALWAYS fetching user details via 'get-user' + 'extra=true'.")
     phone_number = None
     user_first_name = None
-    user_details_data = None # Ensure we fetch fresh data
-
-    # --- ALWAYS Fetch user details using get-user + extra=true ---
-    logger.debug(f"Fetching user details for {user_id} using 'get-user' + 'extra=true'.")
-    payload = {'function': 'get-user', 'user_id': str(user_id), 'extra': 'true'}
-    user_details_data = _call_sb_api(payload)
+    
+    # --- ALWAYS Fetch user details using the new public function ---
+    user_details_data = get_sb_user_details(user_id)
     # --- End Fetch ---
 
     if user_details_data and isinstance(user_details_data, dict):
@@ -425,7 +448,7 @@ def send_reply_to_channel(
         if not conv_details:
             # logger.info(f"Conversation details not provided for Telegram conv {conversation_id}, fetching...")
             conv_details = get_sb_conversation_data(conversation_id)
-            if not conv_details: logger.error(f"Cannot send Telegram reply to conv {conversation_id}: Failed to fetch conv details."); return False
+            if not conv_details: logger.error(f"Cannot send TG reply to conv {conversation_id}: Failed to fetch conv details."); return False
         
         chat_id_from_extra = conv_details.get('details', {}).get('extra')
         if not chat_id_from_extra: logger.error(f"Cannot send TG reply: chat_id (details.extra) not found. Details: {conv_details.get('details')}"); return False
@@ -447,4 +470,44 @@ def send_reply_to_channel(
         logger.warning(f"Unhandled conversation source '{effective_source}' for conv {conversation_id}. Message not sent.")
         return False
 
-# --- End of namwoo_app/services/support_board_service.py (NamFulgor Version - STRICTLY ONLY IMPORT CHANGED) ---
+# --- NEW PUBLIC FUNCTIONS: DEPARTMENT ROUTING ---
+
+def assign_conversation_to_department(conversation_id: str, department_id: int):
+    """Assign a conversation to a specific department using the SB API."""
+    logger.info(f"Assigning conversation {conversation_id} to department ID {department_id}")
+    payload = {
+        "function": "update-conversation-department",
+        "conversation_id": str(conversation_id),
+        "department": department_id,
+    }
+    return _call_sb_api(payload)
+
+
+def route_conversation_to_sales(conversation_id: str) -> None:
+    """Assign conversation to the Sales department."""
+    sales_department_id = Config.SUPPORT_BOARD_SALES_DEPARTMENT_ID
+    if not sales_department_id:
+        logger.error(f"Cannot route conv {conversation_id} to Sales: SUPPORT_BOARD_SALES_DEPARTMENT_ID is not configured.")
+        return
+
+    logger.info(f"Routing conversation {conversation_id} to Sales department (ID: {sales_department_id}).")
+    try:
+        assign_conversation_to_department(conversation_id, int(sales_department_id))
+    except (ValueError, TypeError):
+        logger.error(f"Cannot route to Sales: SUPPORT_BOARD_SALES_DEPARTMENT_ID ('{sales_department_id}') is not a valid integer.")
+        return
+
+
+def route_conversation_to_support(conversation_id: str) -> None:
+    """Assign conversation to the general Support department."""
+    support_department_id = Config.SUPPORT_BOARD_SUPPORT_DEPARTMENT_ID
+    if not support_department_id:
+        logger.error(f"Cannot route conv {conversation_id} to Support: SUPPORT_BOARD_SUPPORT_DEPARTMENT_ID is not configured.")
+        return
+        
+    logger.info(f"Routing conversation {conversation_id} to Support department (ID: {support_department_id}).")
+    try:
+        assign_conversation_to_department(conversation_id, int(support_department_id))
+    except (ValueError, TypeError):
+        logger.error(f"Cannot route to Support: SUPPORT_BOARD_SUPPORT_DEPARTMENT_ID ('{support_department_id}') is not a valid integer.")
+        return

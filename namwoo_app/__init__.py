@@ -103,3 +103,7 @@ def create_app(config_class=Config):
 
     app.logger.info(f"NamFulgor Flask application instance ({app.name}) fully created and configured.")
     return app
+
+# --- ADD THIS LINE AT THE VERY END OF THE FILE ---
+# This creates the 'app' instance that Gunicorn is looking for.
+app = create_app()

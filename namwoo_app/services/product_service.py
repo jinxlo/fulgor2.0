@@ -31,15 +31,18 @@ def find_batteries_for_vehicle(
     vehicle_make: str,
     vehicle_model: str,
     vehicle_year: Optional[int] = None,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     Finds battery products that fit a given vehicle.
     This is the primary search method for the LLM tool.
-    It returns a clean dictionary specifically for the LLM's needs.
+    
+    Returns a dictionary where keys are the specific vehicle models found
+    and values are the list of compatible batteries for that model.
+    e.g., {'BRONCO 6 CIL/8 CIL': [{battery_1}, {battery_2}]}
     """
     if not vehicle_make or not vehicle_model:
         logger.warning("find_batteries_for_vehicle: vehicle_make and vehicle_model are required.")
-        return []
+        return {}
 
     # Normalize vehicle make and model for robust searching
     normalized_make = vehicle_make.lower().strip()
@@ -52,10 +55,10 @@ def find_batteries_for_vehicle(
     )
 
     try:
-        # Build the query using an EXACT case-insensitive match
+        # Build the query using a case-insensitive SUBSTRING match for the model
         fitment_query = db_session.query(VehicleBatteryFitment).filter(
             VehicleBatteryFitment.vehicle_make.ilike(search_make),
-            VehicleBatteryFitment.vehicle_model.ilike(search_model)
+            VehicleBatteryFitment.vehicle_model.ilike(f"%{search_model}%") # Use wildcards
         )
         
         if vehicle_year is not None:
@@ -70,38 +73,40 @@ def find_batteries_for_vehicle(
             joinedload(VehicleBatteryFitment.compatible_battery_products)
         ).all()
 
-        battery_results: List[Dict[str, Any]] = []
-        seen_product_ids = set()
-
-        # +++ START OF FIX +++
-        # Iterate and build a clean dictionary for each battery product
+        # Group battery results by the specific vehicle model found
+        grouped_results: Dict[str, List[Dict[str, Any]]] = {}
+        
         for fitment in vehicle_fitments_with_batteries:
-            for battery in fitment.compatible_battery_products: # Renamed for clarity
-                if battery.id not in seen_product_ids:
-                    # Create a clean dictionary that EXACTLY matches the system prompt's expectations
+            # Construct a clear key for the vehicle model variation
+            vehicle_key = f"{fitment.vehicle_make} {fitment.vehicle_model} ({fitment.year_start}-{fitment.year_end})"
+
+            if vehicle_key not in grouped_results:
+                grouped_results[vehicle_key] = []
+            
+            seen_product_ids_for_group = {p['model_code'] for p in grouped_results[vehicle_key]}
+
+            for battery in fitment.compatible_battery_products:
+                if battery.model_code not in seen_product_ids_for_group:
                     result_item = {
                         "brand": battery.brand,
                         "model_code": battery.model_code,
-                        # The prompt expects 'warranty_info', so we format it here
                         "warranty_info": f"{battery.warranty_months} meses" if battery.warranty_months else "No especificada",
-                        # Ensure both prices are included as floats
                         "price_regular": float(battery.price_regular) if battery.price_regular is not None else None,
                         "price_discount_fx": float(battery.price_discount_fx) if battery.price_discount_fx is not None else None,
-                        # The prompt says to ignore stock, but we include it in case another tool needs it
                         "stock_quantity": battery.stock
                     }
-                    battery_results.append(result_item)
-                    seen_product_ids.add(battery.id)
-        # +++ END OF FIX +++
-            
-        logger.info("Battery fitment search returned %d unique battery products.", len(battery_results))
-        return battery_results
+                    grouped_results[vehicle_key].append(result_item)
+                    seen_product_ids_for_group.add(battery.model_code)
+        
+        logger.info("Battery fitment search returned %d unique vehicle variations.", len(grouped_results))
+        return grouped_results
+        
     except SQLAlchemyError as db_exc:
         logger.exception("Database error during battery fitment search: %s", db_exc)
-        return []
+        return {}
     except Exception as exc:
         logger.exception("Unexpected error during battery fitment search: %s", exc)
-        return []
+        return {}
 
 # --- Add/Update Battery Product ---
 def add_or_update_battery_product(
@@ -346,46 +351,68 @@ def get_battery_product_by_id(session: Session, battery_product_id: str) -> Opti
     battery = session.query(Product).filter(Product.id == battery_product_id).first()
     if battery:
         result = battery.to_dict()
-        # You might want to remove the llm_formatted_message from the generic to_dict() 
-        # to avoid confusion, but for now, this is fine.
         result['llm_formatted_message'] = battery.format_for_llm()
         return result
     return None
 
 # --- Cashea Financing Logic ---
-def get_cashea_financing_options(session: Session, product_price: float) -> Dict[str, Any]:
+def get_cashea_financing_options(
+    session: Session, 
+    product_price: float,
+    user_level: str,
+    apply_discount: bool = False
+) -> Dict[str, Any]:
     """
-    Calculates Cashea financing plans for a given product price based on rules in the DB.
+    Calculates a specific Cashea financing plan for a given product price and user level.
+    - If apply_discount is False, it calculates the standard plan (for Bolivares).
+    - If apply_discount is True, it applies the special discount logic (for Divisas).
     """
     try:
         price = Decimal(str(product_price))
-        rules = session.query(FinancingRule).filter_by(provider='Cashea').order_by(FinancingRule.id).all()
-        if not rules:
-            return {"status": "error", "message": "No se encontraron reglas de financiamiento para Cashea en la base de datos."}
-        plans = []
-        for rule in rules:
-            if rule.provider_discount_percentage is not None:
-                final_price = price * (Decimal(1) - rule.provider_discount_percentage)
-            else:
-                final_price = price
-            initial_payment = (final_price * rule.initial_payment_percentage).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            remaining_balance = final_price - initial_payment
-            if rule.installments and rule.installments > 0:
-                installment_amount = (remaining_balance / rule.installments).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            else:
-                installment_amount = remaining_balance
-            plans.append({
-                "level": rule.level_name,
-                "initial_payment": float(initial_payment),
-                "installments_count": rule.installments,
-                "installment_amount": float(installment_amount),
-                "final_price_with_discount": float(final_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
-                "discount_applied_percent": float(rule.provider_discount_percentage * 100) if rule.provider_discount_percentage is not None else 0
-            })
-        return {"status": "success", "original_product_price": product_price, "financing_plans": plans}
+        
+        # Query for the specific rule for the user's level.
+        rule = session.query(FinancingRule).filter_by(provider='Cashea', level_name=user_level).first()
+        
+        if not rule:
+            logger.error(f"No financing rule found for Cashea and level '{user_level}'.")
+            return {"status": "error", "message": f"No se encontró una regla de financiamiento para Cashea Nivel '{user_level}'."}
+
+        base_price_for_financing = price
+        discount_amount = Decimal('0.00')
+        discount_applied_percent = 0.0
+
+        if apply_discount and rule.provider_discount_percentage is not None and rule.provider_discount_percentage > 0:
+            logger.info(f"Executing DIVISAS discount logic for {user_level}: Applying discount to total price FIRST.")
+            # Divisas path: Discount is applied to the TOTAL product price first.
+            discount_amount = (price * rule.provider_discount_percentage).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            base_price_for_financing = price - discount_amount
+            discount_applied_percent = float(rule.provider_discount_percentage * 100)
+        
+        # All subsequent calculations are based on the (potentially discounted) price.
+        initial_payment_final = (base_price_for_financing * rule.initial_payment_percentage).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        remaining_balance = base_price_for_financing - initial_payment_final
+        
+        if rule.installments and rule.installments > 0:
+            installment_amount = (remaining_balance / rule.installments).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        else:
+            installment_amount = remaining_balance.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) if remaining_balance > 0 else Decimal('0.00')
+
+        # The function now returns a single plan object, not a list.
+        plan = {
+            "level": rule.level_name,
+            "initial_payment": float(initial_payment_final),
+            "installments_count": rule.installments,
+            "installment_amount": float(installment_amount),
+            "total_final_price": float(base_price_for_financing.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            "discount_applied_percent": discount_applied_percent,
+            "total_discount_amount": float(discount_amount)
+        }
+            
+        return {"status": "success", "original_product_price": product_price, "financing_plan": plan}
     except Exception as e:
         logger.error(f"Error calculating Cashea financing options: {e}", exc_info=True)
         return {"status": "error", "message": f"Error interno del servidor al calcular el financiamiento: {e}"}
+
 
 # --- NEW FUNCTION FOR UPDATING FINANCING RULES ---
 def update_financing_rules(session: Session, provider_name: str, new_rules: List[Dict[str, Any]]) -> Tuple[bool, Dict[str, int]]:

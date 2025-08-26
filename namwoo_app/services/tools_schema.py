@@ -27,39 +27,49 @@ def get_tools_schema():
                 },
             },
         },
-        # --- NEW CASHEA TOOL ADDED ---
         {
             "type": "function",
             "function": {
                 "name": "get_cashea_financing_options",
-                "description": "Calcula los planes de financiamiento de Cashea para un precio de producto específico. Úsalo cuando un cliente pregunta '¿cómo puedo pagar con Cashea?' o solicita un plan de pagos.",
+                "description": "Calcula un plan de financiamiento de Cashea para un precio de producto y un nivel de usuario específicos. Úsalo cuando un cliente pregunta '¿cómo puedo pagar con Cashea?' o solicita un plan de pagos y ya ha proporcionado su nivel de Cashea.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "product_price": {
                             "type": "number",
-                            "description": "El precio final del producto sobre el cual se calculará el financiamiento."
+                            "description": "El precio base del producto sobre el cual se calculará el financiamiento (price_regular)."
+                        },
+                        "user_level": {
+                            "type": "string",
+                            "description": "El nivel de Cashea del usuario, por ejemplo, 'Nivel 1', 'Nivel 6'."
+                        },
+                        "apply_discount": {
+                            "type": "boolean",
+                            "description": "Debe ser `true` si el cliente pagará en Divisas (dólares) para aplicar el descuento, o `false` si pagará en Bolívares."
                         }
                     },
-                    "required": ["product_price"],
+                    "required": ["product_price", "user_level", "apply_discount"],
                 },
             },
         },
-        # --- END OF NEW CASHEA TOOL ---
+        # --- MODIFIED: Replaced 'request_human_agent' with specific routing tools ---
         {
             "type": "function",
             "function": {
-                "name": "request_human_agent",
-                "description": "Use this function if the user explicitly asks to speak with a human agent, expresses frustration, or has a complex issue beyond your capabilities.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "reason": {"type": "string", "description": "A brief summary of why the human agent is needed."}
-                    },
-                    "required": ["reason"],
-                },
+                "name": "route_to_sales_department",
+                "description": "Transfers the conversation to the human sales team. Use this when the user shows clear intent to purchase, has confirmed the product they want, and is ready to finalize payment and delivery details.",
+                "parameters": { "type": "object", "properties": {} },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "route_to_human_support",
+                "description": "Transfers the conversation to a general human support agent. Use this for complex issues not covered by other tools, user complaints, or when the user explicitly asks to speak to a person for a non-sales related reason.",
+                "parameters": { "type": "object", "properties": {} },
             },
         }
+        # --- END OF MODIFICATION ---
     ]
 
     if Config.ENABLE_LEAD_GENERATION_TOOLS:

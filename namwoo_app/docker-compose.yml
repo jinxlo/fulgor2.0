@@ -46,6 +46,12 @@ services:
       redis:
         condition: service_healthy
     environment:
+      # --- NEW LINES TO ADD FOR THE ENTRYPOINT SCRIPT ---
+      - POSTGRES_HOST=postgres_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # --- END OF NEW LINES ---
       # Pass all necessary variables from the .env file to the container
       - FLASK_APP=${FLASK_APP}
       - FLASK_ENV=${FLASK_ENV}
