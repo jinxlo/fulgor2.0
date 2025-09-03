@@ -32,6 +32,10 @@ MAKE_ALIASES: dict[str, str] = {
     "chevro": "Chevrolet",
     "chevrolet": "Chevrolet",
 
+    # ALFA
+    "alfa": "ALFA",
+    "alfa romeo": "ALFA",
+
     # BMW
     "bmw": "BMW",
     "beemer": "BMW",

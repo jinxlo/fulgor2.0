@@ -14,6 +14,7 @@ the `MAKE_ALIASES` dictionary. Key examples include:
 | Benz, Merc, Mercedes Benz | Mercedes-Benz |
 | VW, Volks, Volkswagon | Volkswagen |
 | Chevy, Chev | Chevrolet |
+| Alfa, Alfa Romeo | ALFA |
 | Beemer, Bimmer | BMW |
 
 When new variations are encountered, add them to `MAKE_ALIASES` and
