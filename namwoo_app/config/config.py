@@ -48,6 +48,9 @@ class Config:
     AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION")
     # This is the name of the model *deployment* in your Azure AI Studio
     AZURE_OPENAI_ASSISTANT_MODEL_DEPLOYMENT_NAME = os.environ.get("AZURE_OPENAI_ASSISTANT_MODEL_DEPLOYMENT_NAME")
+    
+    # --- NEW VARIABLE FOR THE CHAT PARSER ---
+    AZURE_OPENAI_CHAT_DEPLOYMENT_NAME = os.environ.get("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME")
 
     # --- Google Gemini Configuration (Unchanged) ---
     GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')

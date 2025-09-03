@@ -23,10 +23,7 @@ else:
 # --- End .env loading ---
 
 try:
-    # Corrected imports: Assuming PROJECT_ROOT is now in sys.path
-    # and it contains __init__.py (with create_app, db) and subdirectories models/, utils/
     from __init__ import create_app, db
-    # Your model for vehicle configurations (table name 'vehicle_battery_fitment' in schema)
     from models.product import VehicleBatteryFitment as VehicleConfigModel 
 except ImportError as e:
     print(f"CRITICAL ERROR: [populate_vehicle_configurations] Failed to import application components: {e}")
@@ -38,7 +35,9 @@ except ImportError as e:
     sys.exit(1)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+# --- MODIFICATION START: Corrected the typo from getLogger to logging.getLogger ---
 logger = logging.getLogger(__name__)
+# --- MODIFICATION END ---
 
 JSON_DATA_FILE = os.path.join(SCRIPT_DIR, 'vehicle_fitments_data.json') 
 
@@ -49,11 +48,8 @@ def populate_vehicle_configurations():
         logger.error(f"ABORTING: Data file not found: {JSON_DATA_FILE}")
         return
 
-    # Use create_app() without arguments so it loads the default Config
-    # class defined in config/config.py. Passing a string like 'default'
-    # will trigger an ImportStringError in Flask.
-    flask_app = create_app()  # Create app instance
-    with flask_app.app_context():  # Establish application context
+    flask_app = create_app()
+    with flask_app.app_context():
         session = db.session
 
         try:
@@ -73,19 +69,18 @@ def populate_vehicle_configurations():
             key_notes = fit_entry.get('notes')
 
             if not all([key_make, key_model, key_year_start is not None, key_year_end is not None]):
-                logger.warning(f"Skipping fitment entry due to missing key vehicle data (make, model, year_start, or year_end): {fit_entry}")
+                logger.warning(f"Skipping fitment entry due to missing key vehicle data: {fit_entry}")
                 continue
-                
-            config_key_tuple_parts = [key_make, key_model, key_year_start, key_year_end]
-            # Only include engine_details in the uniqueness key if it's present and not None
-            # and if your schema's UNIQUE constraint for 'vehicle_battery_fitment' includes it.
-            # Based on your schema, engine_details IS part of the UNIQUE constraint implicitly if present.
-            if key_engine_details is not None:
-                config_key_tuple_parts.append(key_engine_details)
-            else:  # If engine_details is None, ensure it's part of the key for uniqueness if your DB constraint treats NULLs as distinct
-                config_key_tuple_parts.append(None)  # Or handle based on DB behavior for NULL in UNIQUE constraints
-
-            config_key_tuple = tuple(config_key_tuple_parts)
+            
+            # --- MODIFICATION START: Made the uniqueness key more robust ---
+            config_key_tuple = (
+                key_make,
+                key_model,
+                str(key_year_start),
+                str(key_year_end),
+                key_engine_details or '__NONE__' # Use a placeholder for None
+            )
+            # --- MODIFICATION END ---
                 
             if config_key_tuple not in unique_vehicle_configs_to_process:
                 data_for_model = {
@@ -94,7 +89,6 @@ def populate_vehicle_configurations():
                     "year_start": key_year_start,
                     "year_end": key_year_end,
                 }
-                # Only add these if they are present in the JSON and your model/table supports them
                 if key_engine_details is not None:
                     data_for_model["engine_details"] = key_engine_details
                 if key_notes is not None:
@@ -103,8 +97,10 @@ def populate_vehicle_configurations():
             
         added_count = 0
         updated_count = 0
+        error_count = 0
         logger.info(f"Found {len(unique_vehicle_configs_to_process)} unique vehicle configurations to process.")
 
+        # --- MODIFICATION START: Resilient loop with individual commits ---
         for veh_config_data in unique_vehicle_configs_to_process.values():
             try:
                 filter_args = {
@@ -113,41 +109,40 @@ def populate_vehicle_configurations():
                     'year_start': veh_config_data['year_start'],
                     'year_end': veh_config_data['year_end']
                 }
-                # Match how the unique key was created for filtering
-                if "engine_details" in veh_config_data:
+                
+                if "engine_details" in veh_config_data and veh_config_data.get('engine_details') is not None:
                     filter_args['engine_details'] = veh_config_data.get('engine_details')
-                else:  # If engine_details was None during key creation and part of UNIQUE constraint
+                else:
                     filter_args['engine_details'] = None
 
                 existing_config = session.query(VehicleConfigModel).filter_by(**filter_args).first()
 
                 if not existing_config:
-                    # Ensure only fields present in VehicleConfigModel are passed
                     model_fields = {key: veh_config_data[key] for key in veh_config_data if hasattr(VehicleConfigModel, key)}
                     new_config = VehicleConfigModel(**model_fields)
                     session.add(new_config)
+                    session.commit() # Commit after each ADD
                     added_count += 1
                 else:
                     changed = False
                     if "notes" in veh_config_data and existing_config.notes != veh_config_data.get('notes'):
                         existing_config.notes = veh_config_data.get('notes')
                         changed = True
-                    if "engine_details" in veh_config_data and existing_config.engine_details != veh_config_data.get('engine_details'):
-                        existing_config.engine_details = veh_config_data.get('engine_details')
-                        changed = True
+                    
                     if changed:
+                        session.commit() # Commit after each UPDATE
                         updated_count += 1
+                        
             except Exception as e_inner:
+                error_count += 1
                 logger.error(f"Error processing vehicle config data '{veh_config_data}': {e_inner}")
-
-        try:
-            session.commit()
-            logger.info(f"Successfully added {added_count} new vehicle configurations and potentially updated {updated_count} existing ones.")
-        except Exception as e_commit:
-            session.rollback()
-            logger.error(f"Error committing vehicle configurations: {e_commit}")
-
+                session.rollback() # Rollback the single failed operation and continue
+        # --- MODIFICATION END ---
         
+        logger.info("--- Vehicle Configuration Summary ---")
+        logger.info(f"Successfully added: {added_count} new vehicle configurations.")
+        logger.info(f"Successfully updated: {updated_count} existing ones.")
+        logger.info(f"Errors encountered: {error_count}.")
 
     logger.info("Vehicle configuration population script finished.")
 

@@ -1,112 +1,145 @@
-# NAMWOO/services/product_service.py (NamFulgor - Battery Version - Corrected Imports)
+# NAMWOO/services/product_service.py (OPTIMIZED VERSION)
 import logging
 import re
 from typing import List, Dict, Any, Optional, Tuple
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation as InvalidDecimalOperation
-# from datetime import datetime # Not currently used
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_
+from sqlalchemy import and_, text, or_
 
-# --- CORRECTED IMPORTS ---
 from models.product import Product, VehicleBatteryFitment
 from models.financing_rule import FinancingRule
 from utils import db_utils
+# --- MODIFICATION: The AI service is now central to our strategy ---
+from services import ai_service
 
 logger = logging.getLogger(__name__)
 
 
-# --- HELPER DICTIONARY FOR VEHICLE SEARCH ---
-VEHICLE_MAKE_ALIASES = {
-    "vw": "volkswagen",
-    "chevy": "chevrolet",
-    # Add other common abbreviations here
-}
+# --- REMOVED: _get_candidate_fitments is no longer needed ---
+# The old broad, unreliable search is replaced by a precise, filtered search.
 
 
-# --- Search Batteries by Vehicle Fitment ---
+# --- THE NEW OPTIMIZED WORKFLOW ---
 def find_batteries_for_vehicle(
     db_session: Session,
-    vehicle_make: str,
-    vehicle_model: str,
-    vehicle_year: Optional[int] = None,
-) -> Dict[str, List[Dict[str, Any]]]:
+    user_query: str,
+) -> Dict[str, Any]:
     """
-    Finds battery products that fit a given vehicle.
-    This is the primary search method for the LLM tool.
-    
-    Returns a dictionary where keys are the specific vehicle models found
-    and values are the list of compatible batteries for that model.
-    e.g., {'BRONCO 6 CIL/8 CIL': [{battery_1}, {battery_2}]}
+    Orchestrates the new "Parse then Filter" search flow:
+    1. Use the AI service to parse the user's query into structured data (make, model, year).
+    2. Build a precise, filtered database query using this structured data.
+    3. If results are clear, return them. If they are ambiguous, ask the user to clarify.
     """
-    if not vehicle_make or not vehicle_model:
-        logger.warning("find_batteries_for_vehicle: vehicle_make and vehicle_model are required.")
+    if not user_query:
         return {}
 
-    # Normalize vehicle make and model for robust searching
-    normalized_make = vehicle_make.lower().strip()
-    search_make = VEHICLE_MAKE_ALIASES.get(normalized_make, normalized_make)
-    search_model = vehicle_model.lower().strip()
+    # 1. Parse the user's query into structured data.
+    # This is the most important step. We let the AI do what it's best at.
+    parsed_vehicle = ai_service.parse_vehicle_query_to_structured(user_query)
 
-    logger.info(
-        "Battery fitment search initiated for: Make='%s', Model='%s', Year='%s'",
-        search_make, search_model, vehicle_year or "Any"
-    )
+    if not parsed_vehicle or not parsed_vehicle.get("make"):
+        logger.warning(f"AI could not parse a vehicle make from query: '{user_query}'. Cannot proceed.")
+        # We can't search without at least a make.
+        # The response here should eventually be handled by the main conversation logic.
+        return {}
 
+    # 2. Build a precise, filtered database query.
     try:
-        # Build the query using a case-insensitive SUBSTRING match for the model
-        fitment_query = db_session.query(VehicleBatteryFitment).filter(
-            VehicleBatteryFitment.vehicle_make.ilike(search_make),
-            VehicleBatteryFitment.vehicle_model.ilike(f"%{search_model}%") # Use wildcards
-        )
-        
-        if vehicle_year is not None:
-            fitment_query = fitment_query.filter(
+        query_builder = db_session.query(VehicleBatteryFitment)
+
+        # --- THE MAKE GUARDRAIL ---
+        # This is a hard filter. Non-negotiable.
+        make = parsed_vehicle["make"]
+        query_builder = query_builder.filter(VehicleBatteryFitment.vehicle_make.ilike(make))
+        logger.info(f"Applying MAKE guardrail: '{make}'")
+
+        # --- MODEL KEYWORD FILTER (OR logic) ---
+        # We search for models that contain ANY of the keywords from the parsed model.
+        if parsed_vehicle.get("model"):
+            model_keywords = [kw for kw in re.split(r'\s+|-', parsed_vehicle["model"]) if len(kw) > 1]
+            if model_keywords:
+                # Create a list of individual ILIKE conditions
+                conditions = [VehicleBatteryFitment.vehicle_model.ilike(f'%{keyword}%') for keyword in model_keywords]
+                # Apply them all at once with an OR condition
+                query_builder = query_builder.filter(or_(*conditions))
+                logger.info(f"Filtering by MODEL keywords (OR): {model_keywords}")
+
+        # --- YEAR FILTER ---
+        # Check if the parsed year falls within the fitment's start/end range.
+        if parsed_vehicle.get("year"):
+            year = parsed_vehicle["year"]
+            query_builder = query_builder.filter(
                 and_(
-                    VehicleBatteryFitment.year_start <= vehicle_year,
-                    VehicleBatteryFitment.year_end >= vehicle_year
+                    VehicleBatteryFitment.year_start <= year,
+                    or_(
+                        VehicleBatteryFitment.year_end >= year,
+                        VehicleBatteryFitment.year_end == None # Handle 'Present'
+                    )
                 )
             )
-        
-        vehicle_fitments_with_batteries = fitment_query.options(
-            joinedload(VehicleBatteryFitment.compatible_battery_products)
-        ).all()
+            logger.info(f"Filtering by YEAR: {year}")
 
-        # Group battery results by the specific vehicle model found
-        grouped_results: Dict[str, List[Dict[str, Any]]] = {}
-        
-        for fitment in vehicle_fitments_with_batteries:
-            # Construct a clear key for the vehicle model variation
-            vehicle_key = f"{fitment.vehicle_make} {fitment.vehicle_model} ({fitment.year_start}-{fitment.year_end})"
+        # Execute the precise query
+        precise_fitments = query_builder.limit(10).all()
+        logger.info(f"Precise query found {len(precise_fitments)} fitments for parsed data: {parsed_vehicle}")
 
-            if vehicle_key not in grouped_results:
-                grouped_results[vehicle_key] = []
-            
-            seen_product_ids_for_group = {p['model_code'] for p in grouped_results[vehicle_key]}
-
-            for battery in fitment.compatible_battery_products:
-                if battery.model_code not in seen_product_ids_for_group:
-                    result_item = {
-                        "brand": battery.brand,
-                        "model_code": battery.model_code,
-                        "warranty_info": f"{battery.warranty_months} meses" if battery.warranty_months else "No especificada",
-                        "price_regular": float(battery.price_regular) if battery.price_regular is not None else None,
-                        "price_discount_fx": float(battery.price_discount_fx) if battery.price_discount_fx is not None else None,
-                        "stock_quantity": battery.stock
-                    }
-                    grouped_results[vehicle_key].append(result_item)
-                    seen_product_ids_for_group.add(battery.model_code)
-        
-        logger.info("Battery fitment search returned %d unique vehicle variations.", len(grouped_results))
-        return grouped_results
-        
-    except SQLAlchemyError as db_exc:
-        logger.exception("Database error during battery fitment search: %s", db_exc)
+    except Exception as e:
+        logger.exception(f"Precise search failed for query '{user_query}': {e}")
         return {}
-    except Exception as exc:
-        logger.exception("Unexpected error during battery fitment search: %s", exc)
+
+    # 3. Handle the results
+    if not precise_fitments:
+        # The specific vehicle wasn't found. This is a "clean" failure.
+        return {"status": "not_found", "message": "No pudimos encontrar la información para tu vehículo."}
+
+    if len(precise_fitments) == 1:
+        # Perfect match! We found exactly one fitment.
+        best_fitment = precise_fitments[0]
+        logger.info(f"Found a single, confident match: ID {best_fitment.fitment_id}")
+        return _format_success_response(db_session, best_fitment)
+    
+    # We found a few, highly-relevant options. Ask the user to choose.
+    # This is much better than asking them to choose from a list of wrong makes.
+    options_map = {}
+    for fitment in precise_fitments:
+        year_range = f"{fitment.year_start}-{fitment.year_end or 'Presente'}"
+        key = f"{fitment.vehicle_make} {fitment.vehicle_model} ({year_range})"
+        options_map[key] = fitment
+
+    logger.info(f"Found multiple relevant options. Asking user for clarification.")
+    return {
+        "status": "clarification_needed",
+        "message": "Encontré algunas versiones que podrían coincidir. Para darte la batería correcta, por favor selecciona tu vehículo:",
+        "options": list(options_map.keys())
+    }
+
+
+def _format_success_response(db_session: Session, fitment: VehicleBatteryFitment) -> Dict[str, Any]:
+    """Helper function to fetch batteries for a fitment and format the final response."""
+    fitment_with_batteries = db_session.query(VehicleBatteryFitment).options(
+        joinedload(VehicleBatteryFitment.compatible_battery_products)
+    ).get(fitment.fitment_id)
+    
+    if not fitment_with_batteries or not fitment_with_batteries.compatible_battery_products:
+        logger.warning(f"Fitment {fitment.fitment_id} found but has no linked batteries.")
         return {}
+
+    battery_list = []
+    for battery in fitment_with_batteries.compatible_battery_products:
+        battery_list.append({
+            "brand": battery.brand, "model_code": battery.model_code,
+            "warranty_info": f"{battery.warranty_months} meses" if battery.warranty_months else "No especificada",
+            "price_regular": float(battery.price_regular) if battery.price_regular is not None else None,
+            "price_discount_fx": float(battery.price_discount_fx) if battery.price_discount_fx is not None else None,
+        })
+    
+    year_range = f"{fitment.year_start}-{fitment.year_end or 'Presente'}"
+    vehicle_key = f"{fitment.vehicle_make} {fitment.vehicle_model} ({year_range})"
+
+    return {"status": "success", "results": {vehicle_key: battery_list}}
+
 
 # --- Add/Update Battery Product ---
 def add_or_update_battery_product(
@@ -128,7 +161,7 @@ def add_or_update_battery_product(
     try:
         entry = session.query(Product).filter(Product.id == battery_id).first()
         action_taken = ""
-        updated_fields_details = [] # For more detailed logging
+        updated_fields_details = []
 
         if entry: # Update existing battery
             logger.info(f"{log_prefix} Found existing battery. Checking for updates.")
@@ -137,15 +170,22 @@ def add_or_update_battery_product(
             for key, new_value in battery_data.items():
                 if hasattr(entry, key):
                     current_value = getattr(entry, key)
-                    if key in ["price_regular", "price_discount_fx"] and new_value is not None:
-                        try:
-                            new_decimal_value = Decimal(str(new_value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                            if current_value != new_decimal_value:
-                                setattr(entry, key, new_decimal_value)
-                                changed = True
-                                updated_fields_details.append(f"{key}: {current_value} -> {new_decimal_value}")
-                        except InvalidDecimalOperation:
-                            logger.warning(f"{log_prefix} Invalid decimal value for {key}: {new_value}")
+                    # --- MODIFICATION START ---
+                    if key in ["price_regular", "price_discount_fx"]:
+                        # Handle None gracefully for price fields
+                        new_decimal_value = None
+                        if new_value is not None:
+                            try:
+                                new_decimal_value = Decimal(str(new_value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                            except (InvalidDecimalOperation, TypeError):
+                                logger.warning(f"{log_prefix} Invalid decimal value for {key}: {new_value}. Setting to None.")
+                                new_decimal_value = None
+                        
+                        if current_value != new_decimal_value:
+                            setattr(entry, key, new_decimal_value)
+                            changed = True
+                            updated_fields_details.append(f"{key}: {current_value} -> {new_decimal_value}")
+                    # --- MODIFICATION END ---
                     elif current_value != new_value:
                         setattr(entry, key, new_value)
                         changed = True
@@ -163,10 +203,23 @@ def add_or_update_battery_product(
             init_data = battery_data.copy()
             init_data['id'] = battery_id
             
+            # --- MODIFICATION START ---
+            # Handle regular price
             if "price_regular" in init_data and init_data["price_regular"] is not None:
-                init_data["price_regular"] = Decimal(str(init_data["price_regular"])).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                try:
+                    init_data["price_regular"] = Decimal(str(init_data["price_regular"])).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                except (InvalidDecimalOperation, TypeError):
+                    logger.error(f"{log_prefix} Invalid decimal for new product price_regular: {init_data['price_regular']}. Setting to None.")
+                    init_data["price_regular"] = None
+
+            # Handle discounted price
             if "price_discount_fx" in init_data and init_data["price_discount_fx"] is not None:
-                init_data["price_discount_fx"] = Decimal(str(init_data["price_discount_fx"])).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                try:
+                    init_data["price_discount_fx"] = Decimal(str(init_data["price_discount_fx"])).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                except (InvalidDecimalOperation, TypeError):
+                    logger.warning(f"{log_prefix} Invalid decimal for new product price_discount_fx: {init_data['price_discount_fx']}. Setting to None.")
+                    init_data["price_discount_fx"] = None
+            # --- MODIFICATION END ---
 
             entry = Product(**init_data)
             session.add(entry)

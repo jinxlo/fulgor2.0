@@ -12,9 +12,9 @@ from openai import AzureOpenAI
 from config.config import Config
 from services import product_service, support_board_service, lead_api_client, thread_mapping_service
 from utils import db_utils
-from utils.logging_utils import get_conversation_loggers # +++ ADDED IMPORT
+from utils.logging_utils import get_conversation_loggers
 
-logger = logging.getLogger(__name__) # This remains for module-level logging
+logger = logging.getLogger(__name__)
 
 class AzureAssistantProvider:
     """
@@ -144,15 +144,21 @@ class AzureAssistantProvider:
                 args = json.loads(tool_call.function.arguments)
                 function_response = {}
 
+                # --- REFACTORED ARCHITECTURE ---
                 if function_name == "search_vehicle_batteries":
-                    with db_utils.get_db_session() as session:
-                        results = product_service.find_batteries_for_vehicle(
-                            db_session=session,
-                            vehicle_make=args.get("make"),
-                            vehicle_model=args.get("model"),
-                            vehicle_year=args.get("year")
-                        )
-                    function_response = {"batteries_found": results}
+                    user_query = args.get("query")
+                    if not user_query:
+                        server_logger.warning("Tool 'search_vehicle_batteries' called without a 'query' argument.")
+                        function_response = {"status": "error", "message": "Missing vehicle query."}
+                    else:
+                        server_logger.info(f"Passing raw query to product service: '{user_query}'")
+                        with db_utils.get_db_session() as session:
+                            results = product_service.find_batteries_for_vehicle(
+                                db_session=session,
+                                user_query=user_query
+                            )
+                        function_response = {"batteries_found": results}
+                # --- END OF REFACTOR ---
                 
                 elif function_name == "get_cashea_financing_options":
                     with db_utils.get_db_session() as session:

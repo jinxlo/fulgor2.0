@@ -1,0 +1,30 @@
+{
+    "id": "1261",
+    "first_name": "Rerun Test",
+    "last_name": "#8304",
+    "email": null,
+    "profile_image": "https://dashboard.nulu.chat/script/media/user.svg",
+    "user_type": "visitor",
+    "creation_time": "2025-09-03 02:28:58",
+    "last_activity": "2025-09-03 02:29:00",
+    "department": null,
+    "token": "b219d8f93bf94dcddcc623ac44481201d34b42c2",
+    "password": "",
+    "details": [
+        {
+            "slug": "city",
+            "name": "City",
+            "value": "Testville"
+        },
+        {
+            "slug": "country",
+            "name": "Country",
+            "value": "USA"
+        },
+        {
+            "slug": "phone",
+            "name": "Phone",
+            "value": "+15559654289"
+        }
+    ]
+}

@@ -1,0 +1,25 @@
+{
+    "id": "1334",
+    "first_name": "Luis",
+    "last_name": "",
+    "email": null,
+    "profile_image": "https://schiocco.s3.amazonaws.com/983607.png",
+    "user_type": "lead",
+    "creation_time": "2025-09-03 03:21:20",
+    "last_activity": "2025-09-03 03:21:21",
+    "department": null,
+    "token": "c374b1f8160cb618da6fe9ccafc1d28a40b704b4",
+    "password": "",
+    "details": [
+        {
+            "slug": "language",
+            "name": "Language",
+            "value": "en"
+        },
+        {
+            "slug": "telegram-id",
+            "name": "Telegram ID",
+            "value": "7054066445"
+        }
+    ]
+}

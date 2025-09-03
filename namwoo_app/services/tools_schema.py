@@ -10,23 +10,26 @@ from config.config import Config
 def get_tools_schema():
     """Returns the list of tool schemas."""
     tools = [
+        # --- MODIFICATION START ---
+        # The old, complex tool definition is replaced with this new, simpler one.
         {
             "type": "function",
             "function": {
                 "name": "search_vehicle_batteries",
-                "description": "Searches for suitable batteries based on vehicle make, model, and year.",
+                "description": "Searches for compatible vehicle batteries using a raw, natural language query from the user. This is the primary tool for finding any battery product.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "make": {"type": "string", "description": "The make of the vehicle, e.g., 'Toyota'."},
-                        "model": {"type": "string", "description": "The model of the vehicle, e.g., 'Corolla'."},
-                        "year": {"type": "integer", "description": "The manufacturing year of the vehicle, e.g., 2018."},
-                        "engine_details": {"type": "string", "description": "Optional details about the engine, e.g., 'postes gruesos'."}
+                        "query": {
+                            "type": "string",
+                            "description": "The user's full, original query about the vehicle. For example: 'bateria para mi chevrolet optra desing 2009' or 'great wall safe 2006'."
+                        }
                     },
-                    "required": ["make", "model"],
+                    "required": ["query"],
                 },
             },
         },
+        # --- MODIFICATION END ---
         {
             "type": "function",
             "function": {
@@ -52,7 +55,6 @@ def get_tools_schema():
                 },
             },
         },
-        # --- MODIFIED: Replaced 'request_human_agent' with specific routing tools ---
         {
             "type": "function",
             "function": {
@@ -69,7 +71,6 @@ def get_tools_schema():
                 "parameters": { "type": "object", "properties": {} },
             },
         }
-        # --- END OF MODIFICATION ---
     ]
 
     if Config.ENABLE_LEAD_GENERATION_TOOLS:

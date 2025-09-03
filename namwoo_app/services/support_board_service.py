@@ -380,7 +380,7 @@ def _send_telegram_message(
         return False
 
 
-# --- PUBLIC FUNCTION: send_reply_to_channel (Original code - kept) ---
+# --- PUBLIC FUNCTION: send_reply_to_channel (MODIFIED) ---
 def send_reply_to_channel(
     conversation_id: str, message_text: str, source: Optional[str],
     target_user_id: str, conversation_details: Optional[Dict], triggering_message_id: Optional[str]
@@ -465,6 +465,17 @@ def send_reply_to_channel(
             # else: logger.error("Cannot add TG message internally to SB: SUPPORT_BOARD_DM_BOT_USER_ID not configured.")
         # else: logger.error(f"External Telegram send via SB API failed for conv {conversation_id}.")
         return external_success
+    
+    # +++ START OF FIX +++
+    # This block handles replies for conversations created via the API (like in your tests).
+    elif effective_source == 'web':
+        logger.info(f"Processing 'web' source reply for conversation {conversation_id}. Sending message directly via SB API.")
+        if dm_bot_user_id:
+            return _add_internal_sb_message(conversation_id, message_text, dm_bot_user_id)
+        else:
+            logger.error(f"Cannot send reply to 'web' source conversation {conversation_id}: SUPPORT_BOARD_DM_BOT_USER_ID is not configured.")
+            return False
+    # +++ END OF FIX +++
 
     else:
         logger.warning(f"Unhandled conversation source '{effective_source}' for conv {conversation_id}. Message not sent.")

@@ -1,346 +1,346 @@
 [
   {
+    "brand": "Black Edition",
+    "model_code": "22NF-850",
+    "original_input_model_code": "BN22NF-850",
+    "price_full": 144.91,
+    "price_discounted_usd": 400,
+    "warranty_months": 21
+  },
+  {
+    "brand": "Black Edition",
+    "model_code": "36FP-800",
+    "original_input_model_code": "BN36FP-800",
+    "price_full": 119.57,
+    "price_discounted_usd": 400,
+    "warranty_months": 21
+  },
+  {
+    "brand": "Black Edition",
+    "model_code": "22FA-900",
+    "original_input_model_code": "BN22FA-900",
+    "price_full": 148.30,
+    "price_discounted_usd": 400,
+    "warranty_months": 21
+  },
+  {
+    "brand": "Black Edition",
+    "model_code": "86-900",
+    "original_input_model_code": "BN86-900",
+    "price_full": 137.20,
+    "price_discounted_usd": 400,
+    "warranty_months": 21
+  },
+  {
+    "brand": "Black Edition",
+    "model_code": "41FXR-1000",
+    "original_input_model_code": "BN41FXR-1000",
+    "price_full": 164.97,
+    "price_discounted_usd": 400,
+    "warranty_months": 21
+  },
+  {
+    "brand": "Black Edition",
+    "model_code": "41XR-1000",
+    "original_input_model_code": "BN41XR-1000",
+    "price_full": 164.97,
+    "price_discounted_usd": 400,
+    "warranty_months": 21
+  },
+  {
+    "brand": "Black Edition",
+    "model_code": "34-1100",
+    "original_input_model_code": "BN34-1100",
+    "price_full": 180.12,
+    "price_discounted_usd": 400,
+    "warranty_months": 21
+  },
+  {
+    "brand": "Black Edition",
+    "model_code": "24MR-1150",
+    "original_input_model_code": "BN24MR-1150",
+    "price_full": 195.08,
+    "price_discounted_usd": 400,
+    "warranty_months": 21
+  },
+  {
+    "brand": "Black Edition",
+    "model_code": "94R-1200",
+    "original_input_model_code": "BN94R-1200",
+    "price_full": 232.70,
+    "price_discounted_usd": 400,
+    "warranty_months": 21
+  },
+  {
     "brand": "Fulgor",
     "model_code": "NS40-670",
-    "original_input_model_code": "NS40 - 670",
-    "price_full": 97.88,
-    "price_discounted_usd": 76.53,
+    "original_input_model_code": "FNS40-670",
+    "price_full": 132.50,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "22NF-700",
-    "original_input_model_code": "22NF -700",
-    "price_full": 100.26,
-    "price_discounted_usd": 81.67,
+    "model_code": "22NF-750",
+    "original_input_model_code": "F22NF-750",
+    "price_full": 126.37,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "36FP-700",
-    "original_input_model_code": "36FP - 700",
-    "price_full": 89.99,
-    "price_discounted_usd": 73.31,
+    "model_code": "36FP-750",
+    "original_input_model_code": "F36FP-750",
+    "price_full": 115.68,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "22FA-800",
-    "original_input_model_code": "22FA - 800",
-    "price_full": 107.47,
-    "price_discounted_usd": 87.54,
+    "model_code": "22FA-850",
+    "original_input_model_code": "F22FA-850",
+    "price_full": 144.85,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "86-800",
-    "original_input_model_code": "86 - 800",
-    "price_full": 107.47,
-    "price_discounted_usd": 87.55,
+    "model_code": "86-850",
+    "original_input_model_code": "F86-850",
+    "price_full": 134.13,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "41MR-900",
-    "original_input_model_code": "41FXR-900",
-    "price_full": 121.85,
-    "price_discounted_usd": 95.28,
+    "model_code": "41MR-950",
+    "original_input_model_code": "F41MR-950",
+    "price_full": 160.59,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "41M-900",
-    "original_input_model_code": "41XR-900",
-    "price_full": 121.85,
-    "price_discounted_usd": 95.28,
+    "model_code": "41M-950",
+    "original_input_model_code": "F41M-950",
+    "price_full": 160.59,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "65-1100",
-    "original_input_model_code": "65 - 1100",
-    "price_full": 158.2,
-    "price_discounted_usd": 123.69,
+    "model_code": "65-1200",
+    "original_input_model_code": "F65-1200",
+    "price_full": 204.69,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "34M-900",
-    "original_input_model_code": "34M - 900",
-    "price_full": 126.31,
-    "price_discounted_usd": 98.77,
+    "model_code": "34M-1000",
+    "original_input_model_code": "F34M-1000",
+    "price_full": 163.44,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "34MR-900",
-    "original_input_model_code": "34MR - 900",
-    "price_full": 126.31,
-    "price_discounted_usd": 98.77,
+    "model_code": "34MR-1000",
+    "original_input_model_code": "F34MR-1000",
+    "price_full": 163.44,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "24R-900",
-    "original_input_model_code": "24R - 900",
-    "price_full": 137.13,
-    "price_discounted_usd": 107.22,
+    "model_code": "24R-1000",
+    "original_input_model_code": "F24R-1000",
+    "price_full": 190.58,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "27XR-900",
-    "original_input_model_code": "27XR - 900",
-    "price_full": 151.53,
-    "price_discounted_usd": 118.48,
+    "model_code": "27XR-1100",
+    "original_input_model_code": "F27XR-1100",
+    "price_full": 192.43,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "27R-900",
-    "original_input_model_code": "27R - 900",
-    "price_full": 151.53,
-    "price_discounted_usd": 118.48,
+    "model_code": "27R-1100",
+    "original_input_model_code": "F27R-1100",
+    "price_full": 192.43,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "30H-1100",
-    "original_input_model_code": "30H - 1100",
-    "price_full": 187.47,
-    "price_discounted_usd": 152.71,
+    "model_code": "30H-1250",
+    "original_input_model_code": "F30H-1250",
+    "price_full": 240.98,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "31T-1100",
-    "original_input_model_code": "31T - 1100",
-    "price_full": 197.2,
-    "price_discounted_usd": 160.64,
+    "model_code": "31T-1250",
+    "original_input_model_code": "F31T-1250",
+    "price_full": 246.10,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "4D-1250",
-    "original_input_model_code": "4D - 1250",
-    "price_full": 275.64,
-    "price_discounted_usd": 215.52,
+    "model_code": "4D-1350",
+    "original_input_model_code": "F4D-1350",
+    "price_full": 346.74,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Fulgor",
-    "model_code": "8D-1500",
-    "original_input_model_code": "8D - 1500",
-    "price_full": 321.08,
-    "price_discounted_usd": 251.05,
+    "model_code": "8D-1600",
+    "original_input_model_code": "F8D-1600",
+    "price_full": 442.37,
+    "price_discounted_usd": 400,
     "warranty_months": 18
-  },
-  {
-    "brand": "Black Edition",
-    "model_code": "22NF-800",
-    "original_input_model_code": "22NF-800",
-    "price_full": 120.37,
-    "price_discounted_usd": 94.12,
-    "warranty_months": 21
-  },
-  {
-    "brand": "Black Edition",
-    "model_code": "36FP-700",
-    "original_input_model_code": "36FP-700",
-    "price_full": 100.49,
-    "price_discounted_usd": 78.58,
-    "warranty_months": 21
-  },
-  {
-    "brand": "Black Edition",
-    "model_code": "22FA-800",
-    "original_input_model_code": "22FA-800",
-    "price_full": 118.86,
-    "price_discounted_usd": 92.94,
-    "warranty_months": 21
-  },
-  {
-    "brand": "Black Edition",
-    "model_code": "86-800",
-    "original_input_model_code": "86-800",
-    "price_full": 118.76,
-    "price_discounted_usd": 92.86,
-    "warranty_months": 21
-  },
-  {
-    "brand": "Black Edition",
-    "model_code": "41MR-900",
-    "original_input_model_code": "41FXR-900",
-    "price_full": 128.62,
-    "price_discounted_usd": 100.57,
-    "warranty_months": 21
-  },
-  {
-    "brand": "Black Edition",
-    "model_code": "41M-900",
-    "original_input_model_code": "41XR-900",
-    "price_full": 128.62,
-    "price_discounted_usd": 100.57,
-    "warranty_months": 21
-  },
-  {
-    "brand": "Black Edition",
-    "model_code": "34-1000",
-    "original_input_model_code": "34-1000",
-    "price_full": 150.35,
-    "price_discounted_usd": 117.56,
-    "warranty_months": 21
-  },
-  {
-    "brand": "Black Edition",
-    "model_code": "24MR-1100",
-    "original_input_model_code": "24MR-1100",
-    "price_full": 161.22,
-    "price_discounted_usd": 126.06,
-    "warranty_months": 21
-  },
-  {
-    "brand": "Black Edition",
-    "model_code": "94R-1100",
-    "original_input_model_code": "94R-1100",
-    "price_full": 188.58,
-    "price_discounted_usd": 147.45,
-    "warranty_months": 21
   },
   {
     "brand": "Mac",
     "model_code": "22NF-850",
     "original_input_model_code": "22NF-850",
-    "price_full": 140.99,
-    "price_discounted_usd": 110.24,
+    "price_full": 153.31,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Mac",
     "model_code": "36FP-800",
     "original_input_model_code": "36FP-800",
-    "price_full": 121.1,
-    "price_discounted_usd": 94.69,
+    "price_full": 131.74,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Mac",
     "model_code": "22FA-850",
     "original_input_model_code": "22FA-850",
-    "price_full": 142.76,
-    "price_discounted_usd": 111.63,
+    "price_full": 152.78,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Mac",
     "model_code": "41MR-1050",
     "original_input_model_code": "41MR-1050",
-    "price_full": 152.94,
-    "price_discounted_usd": 119.58,
+    "price_full": 166.75,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Mac",
     "model_code": "41M-1050",
     "original_input_model_code": "41M-1050",
-    "price_full": 152.94,
-    "price_discounted_usd": 119.58,
+    "price_full": 166.75,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Mac",
     "model_code": "86-900",
     "original_input_model_code": "86-900",
-    "price_full": 140.66,
-    "price_discounted_usd": 109.98,
+    "price_full": 153.20,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Mac",
     "model_code": "24R-1150",
     "original_input_model_code": "24R-1150",
-    "price_full": 198.53,
-    "price_discounted_usd": 155.23,
+    "price_full": 218.49,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Mac",
     "model_code": "34-1150",
     "original_input_model_code": "34-1150",
-    "price_full": 197.11,
-    "price_discounted_usd": 154.12,
+    "price_full": 205.32,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Mac",
     "model_code": "65-1200",
     "original_input_model_code": "65-1200",
-    "price_full": 194.87,
-    "price_discounted_usd": 152.37,
+    "price_full": 215.92,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Mac",
     "model_code": "94R-1200",
     "original_input_model_code": "94R-1200",
-    "price_full": 233.84,
-    "price_discounted_usd": 182.84,
+    "price_full": 254.67,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Mac",
     "model_code": "49-1250",
     "original_input_model_code": "49-1250",
-    "price_full": 237.91,
-    "price_discounted_usd": 186.02,
+    "price_full": 247.82,
+    "price_discounted_usd": 400,
     "warranty_months": 18
   },
   {
     "brand": "Optima",
     "model_code": "34R-ROJA",
-    "original_input_model_code": "34R - ROJA",
-    "price_full": 298.92,
-    "price_discounted_usd": 233.73,
+    "original_input_model_code": "O34R-ROJA",
+    "price_full": 386.77,
+    "price_discounted_usd": 400,
     "warranty_months": 24
   },
   {
     "brand": "Optima",
     "model_code": "34-ROJA",
-    "original_input_model_code": "34 - ROJA",
-    "price_full": 298.92,
-    "price_discounted_usd": 233.73,
+    "original_input_model_code": "O34-ROJA",
+    "price_full": 386.77,
+    "price_discounted_usd": 400,
     "warranty_months": 24
   },
   {
     "brand": "Optima",
     "model_code": "D34M-AZUL",
-    "original_input_model_code": "D34M - AZUL",
-    "price_full": 383.32,
-    "price_discounted_usd": 299.72,
+    "original_input_model_code": "OD34M-AZUL",
+    "price_full": 495.97,
+    "price_discounted_usd": 400,
     "warranty_months": 24
   },
   {
     "brand": "Optima",
     "model_code": "D35-AMARILLA",
-    "original_input_model_code": "D35 - AMARILLA",
-    "price_full": 378.05,
-    "price_discounted_usd": 295.59,
+    "original_input_model_code": "OD35-AMARILLA",
+    "price_full": 489.14,
+    "price_discounted_usd": 400,
     "warranty_months": 24
   },
   {
     "brand": "Optima",
     "model_code": "D34-AMARILLA",
-    "original_input_model_code": "D34 - AMARILLA",
-    "price_full": 386.83,
-    "price_discounted_usd": 302.47,
+    "original_input_model_code": "OD34-AMARILLA",
+    "price_full": 500.52,
+    "price_discounted_usd": 400,
     "warranty_months": 24
   },
   {
     "brand": "Optima",
     "model_code": "D34/78-AMARILLA",
-    "original_input_model_code": "D34/78 - AMARILLA",
-    "price_full": 397.38,
-    "price_discounted_usd": 310.71,
+    "original_input_model_code": "OD34/78-AMARILLA",
+    "price_full": 514.17,
+    "price_discounted_usd": 400,
     "warranty_months": 24
   }
 ]
