@@ -13,6 +13,7 @@ from models.financing_rule import FinancingRule
 from utils import db_utils
 # --- MODIFICATION: The AI service is now central to our strategy ---
 from services import ai_service
+from services.vehicle_aliases import MAKE_ALIASES
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +52,16 @@ def find_batteries_for_vehicle(
 
         # --- THE MAKE GUARDRAIL ---
         # This is a hard filter. Non-negotiable.
-        make = parsed_vehicle["make"]
-        query_builder = query_builder.filter(VehicleBatteryFitment.vehicle_make.ilike(make))
-        logger.info(f"Applying MAKE guardrail: '{make}'")
+        make_original = parsed_vehicle["make"]
+        canonical_make = MAKE_ALIASES.get(make_original.strip().lower(), make_original)
+        parsed_vehicle["make"] = canonical_make
+        query_builder = query_builder.filter(VehicleBatteryFitment.vehicle_make.ilike(canonical_make))
+        if canonical_make != make_original:
+            logger.info(
+                f"Applying MAKE guardrail: '{canonical_make}' (normalized from '{make_original}')"
+            )
+        else:
+            logger.info(f"Applying MAKE guardrail: '{canonical_make}'")
 
         # --- MODEL KEYWORD FILTER (OR logic) ---
         # We search for models that contain ANY of the keywords from the parsed model.
