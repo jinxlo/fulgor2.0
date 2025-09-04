@@ -1,0 +1,41 @@
+[2025-09-04 04:44:48] CUSTOMER: hola
+[2025-09-04 04:44:53] ASSISTANT: ¡Hola! Bienvenido a Serviauto Supremo. ¿En qué puedo ayudarte hoy? Si buscas una batería, solo dime el modelo y año de tu vehículo, y con gusto te ayudo a encontrar la opción ideal.
+[2025-09-04 04:45:08] CUSTOMER: busco una bateria para un vw gol 2005
+[2025-09-04 04:45:17] ASSISTANT: Para tu VW Gol 2005, estas son las opciones recomendadas:
+
+Marca: Black Edition
+Modelo: 36FP-800
+Garantía: 21 meses
+Debe entregar la chatarra
+
+💰 La batería tiene un precio de: $119.57
+💵 Descuento pago en divisas: $400.00
+---
+Marca: Fulgor
+Modelo: 36FP-750
+Garantía: 18 meses
+Debe entregar la chatarra
+
+💰 La batería tiene un precio de: $115.68
+💵 Descuento pago en divisas: $400.00
+
+⚠️ Para que su descuento sea válido, debe presentar este mensaje en la tienda.⚠️
+
+Recuerda que el precio mostrado es entregando tu batería vieja (chatarra). Si no la tienes, se suma una tarifa de $10. Si te encuentras en Caracas o Valencia, te ofrecemos entrega e instalación gratis. 
+
+¿Cuál de estas opciones te interesa para continuar?
+[2025-09-04 04:45:26] CUSTOMER: quiero la black edition
+[2025-09-04 04:45:32] ASSISTANT: ¡Excelente elección! Para continuar, ¿prefieres entrega a domicilio (delivery) o retirar tu batería en una de nuestras tiendas? 
+
+Si estás en Caracas o Valencia, recuerda que el delivery e instalación son totalmente gratis. ¿Cómo te gustaría proceder?
+[2025-09-04 04:45:40] CUSTOMER: cuanto seria si pago con cashea?
+[2025-09-04 04:45:44] ASSISTANT: ¡Perfecto! Según la normativa de Cashea, primero necesito saber dos cosas para calcular tu plan:
+
+1.  ¿Tu pago con Cashea sería en Bolívares o en Divisas (dólares)?
+2.  ¿Puedes indicarme tu nivel en Cashea? (Ejemplo: Nivel 1, Nivel 2, etc.)
+
+Con esa información te doy el monto exacto de la inicial y las cuotas.
+[2025-09-04 04:45:53] CUSTOMER: soy nivel 6 y pagare en bolivares
+[2025-09-04 04:45:59] ASSISTANT: Gracias por la información. Lamentablemente, no tengo disponible un plan de financiamiento con Cashea para el Nivel 6 en este momento.
+
+¿Deseas ver las opciones de pago para otros niveles, o prefieres proceder con otro método de pago? Si tienes otra consulta o necesitas ayuda, dime cómo prefieres continuar.

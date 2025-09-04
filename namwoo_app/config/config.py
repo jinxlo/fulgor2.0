@@ -30,7 +30,7 @@ class Config:
 
     # --- AI Provider Configuration (MODIFIED SECTION) ---
     # This is the central switch for the AI logic.
-    # Valid options: "openai_chat", "openai_assistant", "azure_assistant", "google_gemini"
+    # Valid options: "openai_chat", "openai_assistant", "azure_assistant", "google_gemini", "ollama_chat"
     AI_PROVIDER = os.environ.get('AI_PROVIDER', 'openai_chat').lower()
 
     # --- OpenAI Configuration (for both Chat and Assistant) ---
@@ -57,6 +57,11 @@ class Config:
     GOOGLE_GEMINI_MODEL = os.environ.get('GOOGLE_GEMINI_MODEL', 'gemini-1.5-flash-latest')
     GOOGLE_MAX_TOKENS = int(os.environ.get('GOOGLE_MAX_TOKENS', 2048))
     GOOGLE_REQUEST_TIMEOUT = float(os.environ.get('GOOGLE_REQUEST_TIMEOUT', 60.0))
+
+    # --- Ollama Configuration (NEW) ---
+    OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL')
+    OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL')
+    OLLAMA_API_KEY = os.environ.get('OLLAMA_API_KEY', 'ollama') # Default 'ollama' is fine
 
     # --- PostgreSQL Database (Unchanged) ---
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')

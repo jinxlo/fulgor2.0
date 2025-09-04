@@ -26,46 +26,42 @@ client = AzureOpenAI(
     api_version=Config.AZURE_OPENAI_API_VERSION,
 )
 AZURE_DEPLOYMENT_PARSER = "gpt-4o-mini" # Or your preferred model for this task
+AZURE_DEPLOYMENT_CHOOSER = Config.AZURE_OPENAI_CHAT_DEPLOYMENT_NAME # Should be a powerful model like GPT-4
 
-# --- UPGRADED PROMPT WITH ENGINE_DETAILS ---
+# The system prompt that instructs the AI how to parse the query
 VEHICLE_PARSER_PROMPT = """
-You are an expert vehicle data extraction API. Your job is to analyze a user's Spanish text query and extract the vehicle's Make, Model, Year, and Engine Details.
+You are an expert vehicle data extraction API. Your job is to analyze a user's Spanish text query and extract the vehicle's Make, Model, and Year.
 
 Your response MUST be a single, valid JSON object and nothing else.
 
-The JSON object should have four keys: "make", "model", "year", and "engine_details".
+The JSON object should have three keys: "make", "model", and "year".
 - "make": The vehicle brand (e.g., "CHEVROLET", "FORD"). Standardize it to uppercase.
-- "model": The specific model name. Exclude engine details from this field. (e.g., "AVEO", "F-150", "GRAN VITARA XL5").
+- "model": The specific model name and any sub-model identifiers (e.g., "AVEO", "F-150", "GRAN VITARA XL5 6CIL").
 - "year": The 4-digit year as an integer.
-- "engine_details": Any specific engine or technical specifiers like "4CIL", "6 CILINDROS", "V6", "2.0L", "4WD", "DIESEL". If none, this should be `null`.
 
 Rules:
 - If a key's value cannot be determined, the value should be `null`.
 - Do NOT include any explanations or extra text outside of the JSON object.
 - If the user provides a brand that is also a person's name like "Mercedes", correctly identify it as the make "MERCEDES BENZ".
-- Separate the core model name from engine/technical specifications.
 
 Examples:
 User: "bateria para un ford fiesta del 2011"
-Response: {"make": "FORD", "model": "FIESTA", "year": 2011, "engine_details": null}
+Response: {"make": "FORD", "model": "FIESTA", "year": 2011}
 
 User: "chevrolet gran vitara xl5 6cil 2000"
-Response: {"make": "CHEVROLET", "model": "GRAN VITARA XL5", "year": 2000, "engine_details": "6cil"}
+Response: {"make": "CHEVROLET", "model": "GRAN VITARA XL5 6CIL", "year": 2000}
 
 User: "tienes para mi camioneta toyota"
-Response: {"make": "TOYOTA", "model": null, "year": null, "engine_details": null}
+Response: {"make": "TOYOTA", "model": null, "year": null}
 
-User: "para un CHERY TIGGO 4/4PRO del 2022"
-Response: {"make": "CHERY", "model": "TIGGO 4/4PRO", "year": 2022, "engine_details": null}
-
-User: "busco para una jeep grand cherokee laredo 4x4 2009"
-Response: {"make": "JEEP", "model": "GRAND CHEROKEE LAREDO", "year": 2009, "engine_details": "4x4"}
+User: "cuanto cuesta para un aveo?"
+Response: {"make": null, "model": "AVEO", "year": null}
 """
 
 def parse_vehicle_query_to_structured(user_query: str) -> Optional[dict]:
     """
     Uses an LLM to parse a natural language query into a structured
-    dictionary of {make, model, year, engine_details}.
+    dictionary of {make, model, year}.
     """
     if not user_query:
         return None
@@ -85,8 +81,8 @@ def parse_vehicle_query_to_structured(user_query: str) -> Optional[dict]:
         response_content = completion.choices[0].message.content
         parsed_json = json.loads(response_content)
         
-        # Validation for the new, richer structure
-        if all(k in parsed_json for k in ["make", "model", "year", "engine_details"]):
+        # Basic validation of the returned structure
+        if "make" in parsed_json and "model" in parsed_json and "year" in parsed_json:
             logger.info(f"AI successfully parsed query into: {parsed_json}")
             return parsed_json
         else:
@@ -154,13 +150,15 @@ def get_ai_provider():
         raise ValueError(f"Unsupported AI_PROVIDER configured: '{provider_name}'")
 
 
-# --- NEW AI DECISION-MAKER FUNCTION ---
+# --- REFACTORED AI DECISION-MAKER FUNCTION ---
 def decide_best_vehicle_match(user_query: str, db_candidates: List[str]) -> Optional[str]:
-    # ... (this function remains unchanged) ...
+    """
+    Uses a powerful AI model to analyze a list of database candidates and
+    determine the best match for the user's original query.
+    """
     if not user_query or not db_candidates:
         return None
 
-    # This prompt asks the AI to act as a specialist and just return the best choice.
     system_prompt_chooser = f"""
 You are a vehicle data validation expert. Your task is to select the single best match for a user's query from a list of potential database entries.
 
@@ -187,21 +185,19 @@ Your Response:
 FORD EXPLORER (2006-2010)
 """
 
-    # Format the candidates for the prompt
     formatted_candidates = "\n".join([f"{i+1}. {c}" for i, c in enumerate(db_candidates)])
-    
-    combined_prompt = f"User Query: \"{user_query}\"\n\nDatabase Candidates:\n[\n{formatted_candidates}\n]"
+    user_message_content = f"User Query: \"{user_query}\"\n\nDatabase Candidates:\n[\n{formatted_candidates}\n]"
 
     try:
-        # We use the simple Chat provider for this specific, stateless task.
-        provider = azure_chat_provider.AzureChatProvider(
-            api_key=Config.AZURE_OPENAI_API_KEY,
-            azure_endpoint=Config.AZURE_OPENAI_ENDPOINT,
-            api_version=Config.AZURE_OPENAI_API_VERSION,
-            deployment_name=Config.AZURE_OPENAI_CHAT_DEPLOYMENT_NAME  # Ensure this is a powerful model like GPT-4
+        completion = client.chat.completions.create(
+            model=AZURE_DEPLOYMENT_CHOOSER,
+            messages=[
+                {"role": "system", "content": system_prompt_chooser},
+                {"role": "user", "content": user_message_content}
+            ],
+            temperature=0.0,
         )
-        # We cannot use JSON mode here, as we need a simple text response.
-        response_text = provider.get_simple_response(query=combined_prompt, system_prompt=system_prompt_chooser)
+        response_text = completion.choices[0].message.content
 
         if response_text and "none" not in response_text.lower():
             # Find the chosen response in the original candidate list to ensure it's a valid choice
@@ -210,7 +206,10 @@ FORD EXPLORER (2006-2010)
                     logger.info(f"AI decision-maker chose '{candidate}' for query '{user_query}'")
                     return candidate
         
-        logger.warning(f"AI decision-maker could not find a suitable match for '{user_query}' among candidates.")
+        logger.warning(
+            f"AI decision-maker could not find a suitable match for '{user_query}' among candidates. "
+            f"Response: '{response_text}'"
+        )
         return None
 
     except Exception as e:

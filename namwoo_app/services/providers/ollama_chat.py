@@ -56,22 +56,22 @@ class OllamaChatProvider:
                 break
         return " ".join(filter(None, user_messages_block)) or None
 
-    # -------- Tool schema (we pass this each request; unlike Azure Assistants) --------
+    # -------- Tool schema (MODIFIED SECTION) --------
     def _get_tools_schema(self) -> List[Dict[str, Any]]:
         """
         Returns the JSON schema for all supported tools.
-        Keep names in sync with _execute_tool_calls below.
+        Descriptions are enhanced to act as "guardrails" for the LLM, aligning with the system prompt.
         """
         return [
             {
                 "type": "function",
                 "function": {
                     "name": "search_vehicle_batteries",
-                    "description": "Find batteries that fit a user-described vehicle query (make/model/year/engine).",
+                    "description": "Busca baterías compatibles. Úsala SOLAMENTE cuando el usuario mencione un vehículo (marca, modelo, año). NO la uses para saludos o preguntas generales.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "Raw user query about the vehicle"}
+                            "query": {"type": "string", "description": "La descripción original y completa del vehículo que dio el usuario."}
                         },
                         "required": ["query"],
                         "additionalProperties": False
@@ -82,15 +82,15 @@ class OllamaChatProvider:
                 "type": "function",
                 "function": {
                     "name": "get_cashea_financing_options",
-                    "description": "Compute Cashea financing options for a product.",
+                    "description": "Calcula las opciones de financiamiento con Cashea para un producto. Se usa solo cuando el cliente pregunta específicamente por Cashea.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "product_price": {"type": "number"},
-                            "user_level": {"type": "string"},
-                            "apply_discount": {"type": "boolean"}
+                            "product_price": {"type": "number", "description": "El precio BASE del producto (`price_regular`), NUNCA el precio con descuento."},
+                            "user_level": {"type": "string", "description": "El nivel del usuario en Cashea (ej: 'Nivel 1', 'Nivel 3')."},
+                            "apply_discount": {"type": "boolean", "description": "Debe ser `True` si el cliente paga la inicial en divisas, `False` si paga en bolívares."}
                         },
-                        "required": ["product_price", "user_level"],
+                        "required": ["product_price", "user_level", "apply_discount"],
                         "additionalProperties": False
                     }
                 }
@@ -99,7 +99,7 @@ class OllamaChatProvider:
                 "type": "function",
                 "function": {
                     "name": "submit_order_for_processing",
-                    "description": "Create a new lead and submit basic customer/order details.",
+                    "description": "Registra el pedido del cliente en el sistema. Úsala como el ÚLTIMO paso del flujo de compra, DESPUÉS de haber recolectado todos los datos del cliente.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -121,7 +121,7 @@ class OllamaChatProvider:
                 "type": "function",
                 "function": {
                     "name": "route_to_sales_department",
-                    "description": "Route the conversation to the Sales department.",
+                    "description": "Transfiere la conversación a un agente de ventas humano. Úsala SOLAMENTE al final de un flujo de compra exitoso, junto con `submit_order_for_processing`.",
                     "parameters": {"type": "object", "properties": {}, "additionalProperties": False}
                 }
             },
@@ -129,23 +129,22 @@ class OllamaChatProvider:
                 "type": "function",
                 "function": {
                     "name": "route_to_human_support",
-                    "description": "Route the conversation to the Support department.",
+                    "description": "Transfiere la conversación a soporte general. Úsala cuando el sistema no encuentra un vehículo, el cliente está frustrado, o pide explícitamente hablar con una persona.",
                     "parameters": {"type": "object", "properties": {}, "additionalProperties": False}
                 }
             }
         ]
 
-    # -------- Core entry point (replaces AzureAssistantProvider.process_message) --------
+    # -------- Core entry point (Unchanged) --------
     def process_message(
         self,
         sb_conversation_id: str,
-        new_user_message: Optional[str],  # kept for parity with your current call site
+        new_user_message: Optional[str],
         conversation_data: Dict[str, Any]
     ) -> Optional[str]:
         server_logger, _ = get_conversation_loggers(sb_conversation_id)
         lock_key = f"lock:conv:{sb_conversation_id}"
 
-        # We don't need Azure "threads" with Ollama; we build the messages array directly.
         with self.redis.lock(lock_key, timeout=self.run_timeout_seconds + 10, blocking_timeout=60):
             try:
                 bundled_message = self._prepare_message_content(conversation_data)
@@ -153,13 +152,11 @@ class OllamaChatProvider:
                     server_logger.warning(f"No new user message content for Conv {sb_conversation_id}.")
                     return None
 
-                # Build the OpenAI-style messages list.
                 messages = [
                     {"role": "system", "content": Config.SYSTEM_PROMPT},
                     {"role": "user", "content": bundled_message},
                 ]
 
-                # 1) First call: ask the model with tool schema, allow auto tool selection
                 server_logger.info(f"[{self.provider_name}] Asking LLM (Conv {sb_conversation_id})")
                 first = self.client.chat.completions.create(
                     model=self.model,
@@ -167,31 +164,25 @@ class OllamaChatProvider:
                     tools=self._get_tools_schema(),
                     tool_choice="auto",
                     temperature=getattr(Config, "OPENAI_TEMPERATURE", 0.3),
-                    max_tokens=getattr(Config, "OPENAI_MAX_TOKENS", 256),
+                    max_tokens=getattr(Config, "OPENAI_MAX_TOKENS", 1024) # Increased for potentially longer responses
                 )
 
                 choice = first.choices[0].message
 
-                # If the model replied directly (no tool calls), return content
                 if not getattr(choice, "tool_calls", None):
                     content = (choice.content or "").strip()
                     return content or None
 
-                # 2) If tools are requested, run them and send a second call with tool results
                 tool_calls = choice.tool_calls
                 server_logger.info(f"[{self.provider_name}] Tool calls requested: {len(tool_calls)}")
 
-                # Execute your tools with your existing implementation
                 tool_outputs = self._execute_tool_calls(
                     tool_calls=tool_calls,
                     sb_conversation_id=sb_conversation_id,
                     server_logger=server_logger
                 )
 
-                # Build second call messages: prior system+user, PLUS the assistant tool_calls,
-                # followed by a tool-role message per output.
-                second_messages = list(messages)  # copy
-                # Add the assistant message that contained the tool_calls
+                second_messages = list(messages)
                 second_messages.append({
                     "role": "assistant",
                     "tool_calls": [
@@ -205,7 +196,7 @@ class OllamaChatProvider:
                         } for tc in tool_calls
                     ]
                 })
-                # Add one tool message per output
+                
                 for out in tool_outputs:
                     second_messages.append({
                         "role": "tool",
@@ -219,7 +210,7 @@ class OllamaChatProvider:
                     model=self.model,
                     messages=second_messages,
                     temperature=getattr(Config, "OPENAI_TEMPERATURE", 0.3),
-                    max_tokens=getattr(Config, "OPENAI_MAX_TOKENS", 256),
+                    max_tokens=getattr(Config, "OPENAI_MAX_TOKENS", 1024)
                 )
                 final_choice = second.choices[0].message
                 return (final_choice.content or "").strip() or None
@@ -235,12 +226,8 @@ class OllamaChatProvider:
                 return tc.function.name
         return "unknown_tool"
 
-    # -------- Same tool runner you already use (kept intact, small tweaks) --------
+    # -------- Tool runner (Unchanged) --------
     def _execute_tool_calls(self, tool_calls: List[Any], sb_conversation_id: str, server_logger: logging.Logger) -> List[Dict[str, str]]:
-        """
-        Executes tool calls requested by the assistant and returns a list of:
-        {"tool_call_id": <id>, "output": "<json string>"}
-        """
         tool_outputs = []
         for tool_call in tool_calls:
             function_name = tool_call.function.name
@@ -254,15 +241,15 @@ class OllamaChatProvider:
                     user_query = args.get("query")
                     if not user_query:
                         server_logger.warning("Tool 'search_vehicle_batteries' called without 'query'.")
-                        function_response = {"status": "error", "message": "Missing vehicle query."}
+                        function_response = {} # Return empty dict as per prompt's Path C
                     else:
                         server_logger.info(f"Passing raw query to product service: '{user_query}'")
                         with db_utils.get_db_session() as session:
-                            results = product_service.find_batteries_for_vehicle(
+                            # This service is expected to return the full JSON with status, results, etc.
+                            function_response = product_service.find_batteries_for_vehicle(
                                 db_session=session,
                                 user_query=user_query
                             )
-                        function_response = {"batteries_found": results}
 
                 elif function_name == "get_cashea_financing_options":
                     with db_utils.get_db_session() as session:
