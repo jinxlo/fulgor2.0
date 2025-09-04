@@ -27,40 +27,45 @@ client = AzureOpenAI(
 )
 AZURE_DEPLOYMENT_PARSER = "gpt-4o-mini" # Or your preferred model for this task
 
-# The system prompt that instructs the AI how to parse the query
+# --- UPGRADED PROMPT WITH ENGINE_DETAILS ---
 VEHICLE_PARSER_PROMPT = """
-You are an expert vehicle data extraction API. Your job is to analyze a user's Spanish text query and extract the vehicle's Make, Model, and Year.
+You are an expert vehicle data extraction API. Your job is to analyze a user's Spanish text query and extract the vehicle's Make, Model, Year, and Engine Details.
 
 Your response MUST be a single, valid JSON object and nothing else.
 
-The JSON object should have three keys: "make", "model", and "year".
+The JSON object should have four keys: "make", "model", "year", and "engine_details".
 - "make": The vehicle brand (e.g., "CHEVROLET", "FORD"). Standardize it to uppercase.
-- "model": The specific model name and any sub-model identifiers (e.g., "AVEO", "F-150", "GRAN VITARA XL5 6CIL").
+- "model": The specific model name. Exclude engine details from this field. (e.g., "AVEO", "F-150", "GRAN VITARA XL5").
 - "year": The 4-digit year as an integer.
+- "engine_details": Any specific engine or technical specifiers like "4CIL", "6 CILINDROS", "V6", "2.0L", "4WD", "DIESEL". If none, this should be `null`.
 
 Rules:
 - If a key's value cannot be determined, the value should be `null`.
 - Do NOT include any explanations or extra text outside of the JSON object.
 - If the user provides a brand that is also a person's name like "Mercedes", correctly identify it as the make "MERCEDES BENZ".
+- Separate the core model name from engine/technical specifications.
 
 Examples:
 User: "bateria para un ford fiesta del 2011"
-Response: {"make": "FORD", "model": "FIESTA", "year": 2011}
+Response: {"make": "FORD", "model": "FIESTA", "year": 2011, "engine_details": null}
 
 User: "chevrolet gran vitara xl5 6cil 2000"
-Response: {"make": "CHEVROLET", "model": "GRAN VITARA XL5 6CIL", "year": 2000}
+Response: {"make": "CHEVROLET", "model": "GRAN VITARA XL5", "year": 2000, "engine_details": "6cil"}
 
 User: "tienes para mi camioneta toyota"
-Response: {"make": "TOYOTA", "model": null, "year": null}
+Response: {"make": "TOYOTA", "model": null, "year": null, "engine_details": null}
 
-User: "cuanto cuesta para un aveo?"
-Response: {"make": null, "model": "AVEO", "year": null}
+User: "para un CHERY TIGGO 4/4PRO del 2022"
+Response: {"make": "CHERY", "model": "TIGGO 4/4PRO", "year": 2022, "engine_details": null}
+
+User: "busco para una jeep grand cherokee laredo 4x4 2009"
+Response: {"make": "JEEP", "model": "GRAND CHEROKEE LAREDO", "year": 2009, "engine_details": "4x4"}
 """
 
 def parse_vehicle_query_to_structured(user_query: str) -> Optional[dict]:
     """
     Uses an LLM to parse a natural language query into a structured
-    dictionary of {make, model, year}.
+    dictionary of {make, model, year, engine_details}.
     """
     if not user_query:
         return None
@@ -80,8 +85,8 @@ def parse_vehicle_query_to_structured(user_query: str) -> Optional[dict]:
         response_content = completion.choices[0].message.content
         parsed_json = json.loads(response_content)
         
-        # Basic validation of the returned structure
-        if "make" in parsed_json and "model" in parsed_json and "year" in parsed_json:
+        # Validation for the new, richer structure
+        if all(k in parsed_json for k in ["make", "model", "year", "engine_details"]):
             logger.info(f"AI successfully parsed query into: {parsed_json}")
             return parsed_json
         else:
@@ -151,10 +156,7 @@ def get_ai_provider():
 
 # --- NEW AI DECISION-MAKER FUNCTION ---
 def decide_best_vehicle_match(user_query: str, db_candidates: List[str]) -> Optional[str]:
-    """
-    Uses a powerful AI model to analyze a list of database candidates and
-    determine the best match for the user's original query.
-    """
+    # ... (this function remains unchanged) ...
     if not user_query or not db_candidates:
         return None
 

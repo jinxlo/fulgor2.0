@@ -3,6 +3,7 @@
 import logging
 import json
 import time
+import re
 from typing import List, Dict, Optional, Any
 
 import redis
@@ -144,13 +145,14 @@ class AzureAssistantProvider:
                 args = json.loads(tool_call.function.arguments)
                 function_response = {}
 
-                # --- REFACTORED ARCHITECTURE ---
                 if function_name == "search_vehicle_batteries":
                     user_query = args.get("query")
                     if not user_query:
                         server_logger.warning("Tool 'search_vehicle_batteries' called without a 'query' argument.")
                         function_response = {"status": "error", "message": "Missing vehicle query."}
                     else:
+                        # --- CLEANED UP: All parsing is now handled by the product_service ---
+                        # We pass the raw query from the AI directly to the centralized service.
                         server_logger.info(f"Passing raw query to product service: '{user_query}'")
                         with db_utils.get_db_session() as session:
                             results = product_service.find_batteries_for_vehicle(
@@ -158,7 +160,6 @@ class AzureAssistantProvider:
                                 user_query=user_query
                             )
                         function_response = {"batteries_found": results}
-                # --- END OF REFACTOR ---
                 
                 elif function_name == "get_cashea_financing_options":
                     with db_utils.get_db_session() as session:

@@ -50,6 +50,7 @@ After you call the `search_vehicle_batteries` tool, you must carefully inspect t
         1. FORD BRONCO (1989-1997)
         2. FORD BRONCO SPORT (2023-2024)"
     6.  After the user replies (e.g., "la 2" or "la Bronco Sport"), you **MUST** call the `search_vehicle_batteries` tool **AGAIN**, using the user's more specific choice as the new `query`.
+    7.  If the follow-up search still returns `clarification_needed` or fails to narrow down the same options, avoid repeating the loop. Ask the user for any additional distinguishing details (como tipo de motor, versión, etc.) y, si aún no se resuelve, llama a `route_to_human_support`.
 
 *   **Path B: The tool returns `{"status": "success", ...}`**
     1.  This means a confident match was found. The compatible batteries are inside the `results` dictionary.

@@ -1,122 +1,250 @@
 # NAMWOO/services/product_service.py (OPTIMIZED VERSION)
 import logging
 import re
+import time
 from typing import List, Dict, Any, Optional, Tuple
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation as InvalidDecimalOperation
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, text, or_
+from sqlalchemy import and_, text, or_, func
+from thefuzz import process as fuzzy_process
 
 from models.product import Product, VehicleBatteryFitment
 from models.financing_rule import FinancingRule
 from utils import db_utils
-# --- MODIFICATION: The AI service is now central to our strategy ---
 from services import ai_service
 from services.vehicle_aliases import MAKE_ALIASES
 
 logger = logging.getLogger(__name__)
 
+# --- CACHING AND CONFIGURATION ---
+_vehicle_makes_cache: Dict[str, Any] = {"data": None, "timestamp": 0}
+CACHE_DURATION_SECONDS = 3600  # Cache for 1 hour
+FUZZY_MATCH_CONFIDENCE_THRESHOLD = 85 # Minimum similarity score (out of 100) to be considered a match
 
-# --- REMOVED: _get_candidate_fitments is no longer needed ---
-# The old broad, unreliable search is replaced by a precise, filtered search.
+# --- CACHE HELPER FUNCTION ---
+def _get_all_makes_cached(db_session: Session) -> List[str]:
+    """
+    Fetches a distinct list of all vehicle makes from the DB and caches it.
+    """
+    current_time = time.time()
+    if _vehicle_makes_cache["data"] and (current_time - _vehicle_makes_cache["timestamp"] < CACHE_DURATION_SECONDS):
+        return _vehicle_makes_cache["data"]
+
+    try:
+        logger.info("Refreshing vehicle makes cache from database...")
+        results = db_session.query(VehicleBatteryFitment.vehicle_make).distinct().all()
+        # The query returns a list of tuples, so we extract the first element of each
+        makes = sorted([make[0] for make in results if make[0]], key=len, reverse=True)
+        
+        _vehicle_makes_cache["data"] = makes
+        _vehicle_makes_cache["timestamp"] = current_time
+        logger.info(f"Successfully cached {len(makes)} vehicle makes.")
+        return makes
+    except Exception as e:
+        logger.exception("Failed to query and cache vehicle makes.")
+        return []
+
+# --- DATA-DRIVEN MAKE FINDER (FALLBACK LOGIC) ---
+def _find_make_from_query(db_session: Session, user_query: str) -> Optional[str]:
+    """
+    Identifies the vehicle make from a user query using a data-driven approach.
+    1. Checks for known aliases.
+    2. Falls back to fuzzy matching against all makes in the DB.
+    """
+    all_makes = _get_all_makes_cached(db_session)
+    query_lower = user_query.lower()
+
+    # 1. Exact match via aliases (most reliable)
+    # Sort by length to match "alfa romeo" before "alfa"
+    sorted_aliases = sorted(MAKE_ALIASES.keys(), key=len, reverse=True)
+    for alias in sorted_aliases:
+        if alias in query_lower:
+            canonical_make = MAKE_ALIASES[alias]
+            logger.info(f"Data-driven search: Found make '{canonical_make}' via alias '{alias}'.")
+            return canonical_make
+
+    # 2. Fuzzy match against canonical makes (for typos)
+    # `extractOne` finds the best match from a list of choices
+    best_match = fuzzy_process.extractOne(query_lower, all_makes)
+    if best_match:
+        found_make, score = best_match
+        if score >= FUZZY_MATCH_CONFIDENCE_THRESHOLD:
+            logger.info(f"Data-driven search: Found make '{found_make}' via fuzzy match with score {score}%.")
+            return found_make
+        else:
+            logger.warning(f"Fuzzy match found '{found_make}' but score ({score}%) was below threshold.")
+
+    logger.warning(f"Data-driven search could not confidently identify a make in query: '{user_query}'.")
+    return None
 
 
-# --- THE NEW OPTIMIZED WORKFLOW ---
+# --- THE ULTIMATE MULTI-TIERED SEARCH WORKFLOW ---
 def find_batteries_for_vehicle(
     db_session: Session,
     user_query: str,
 ) -> Dict[str, Any]:
     """
-    Orchestrates the new "Parse then Filter" search flow:
-    1. Use the AI service to parse the user's query into structured data (make, model, year).
-    2. Build a precise, filtered database query using this structured data.
-    3. If results are clear, return them. If they are ambiguous, ask the user to clarify.
+    Orchestrates a multi-tiered, resilient search:
+    1. TIER 1 (Fast Path): Use AI to parse the query into structured data.
+    2. TIER 2 (Smart Fallback): If AI fails, use a data-driven approach with aliasing and
+       fuzzy logic to identify the vehicle make.
+    3. Execute the two-stage DB filter with the identified vehicle data.
     """
     if not user_query:
         return {}
 
-    # 1. Parse the user's query into structured data.
-    # This is the most important step. We let the AI do what it's best at.
-    parsed_vehicle = ai_service.parse_vehicle_query_to_structured(user_query)
+    parsed_vehicle = None
 
-    if not parsed_vehicle or not parsed_vehicle.get("make"):
-        logger.warning(f"AI could not parse a vehicle make from query: '{user_query}'. Cannot proceed.")
-        # We can't search without at least a make.
-        # The response here should eventually be handled by the main conversation logic.
-        return {}
-
-    # 2. Build a precise, filtered database query.
+    # TIER 1: Attempt AI parsing first
+    ai_parsed = ai_service.parse_vehicle_query_to_structured(user_query)
+    if ai_parsed and ai_parsed.get("make") and ai_parsed.get("model"):
+        logger.info("Search Tier 1 (AI Parse) SUCCEEDED. Using AI-structured data.")
+        # Normalize the make using our alias map
+        make_lower = ai_parsed["make"].lower()
+        ai_parsed["make"] = MAKE_ALIASES.get(make_lower, ai_parsed["make"])
+        parsed_vehicle = ai_parsed
+    else:
+        logger.warning("Search Tier 1 (AI Parse) FAILED. Initiating Tier 2 (Data-Driven Fallback).")
+        # TIER 2: Data-Driven Fallback
+        found_make = _find_make_from_query(db_session, user_query)
+        if found_make:
+            # We found a make! Now, let's reconstruct the rest of the query.
+            # Remove the found make (and its aliases) from the query to isolate the model/year/engine
+            remaining_query = user_query
+            # Also remove aliases to clean the model string
+            all_aliases_for_make = [k for k, v in MAKE_ALIASES.items() if v == found_make] + [found_make]
+            for term in sorted(all_aliases_for_make, key=len, reverse=True):
+                remaining_query = re.sub(r'\b' + re.escape(term) + r'\b', '', remaining_query, flags=re.IGNORECASE)
+            
+            # Use the remaining string to re-parse with the AI, but now we guide it.
+            # This is more reliable than complex regex.
+            re_parsed = ai_service.parse_vehicle_query_to_structured(remaining_query.strip())
+            
+            parsed_vehicle = {
+                "make": found_make,
+                "model": re_parsed.get("model") if re_parsed else remaining_query.strip(),
+                "year": re_parsed.get("year") if re_parsed else None,
+                "engine_details": re_parsed.get("engine_details") if re_parsed else None
+            }
+            logger.info(f"Tier 2 SUCCEEDED. Reconstructed vehicle data: {parsed_vehicle}")
+        else:
+             logger.error(f"All search tiers FAILED for query: '{user_query}'.")
+             return {"status": "not_found", "message": "No pudimos determinar el vehículo que buscas."}
+    
+    # --- EXECUTION STAGE (Uses data from either Tier 1 or Tier 2) ---
     try:
         query_builder = db_session.query(VehicleBatteryFitment)
 
-        # --- THE MAKE GUARDRAIL ---
-        # This is a hard filter. Non-negotiable.
-        make_original = parsed_vehicle["make"]
-        canonical_make = MAKE_ALIASES.get(make_original.strip().lower(), make_original)
-        parsed_vehicle["make"] = canonical_make
-        query_builder = query_builder.filter(VehicleBatteryFitment.vehicle_make.ilike(canonical_make))
-        if canonical_make != make_original:
-            logger.info(
-                f"Applying MAKE guardrail: '{canonical_make}' (normalized from '{make_original}')"
-            )
-        else:
-            logger.info(f"Applying MAKE guardrail: '{canonical_make}'")
+        if parsed_vehicle.get("make"):
+            query_builder = query_builder.filter(VehicleBatteryFitment.vehicle_make.ilike(parsed_vehicle["make"]))
 
-        # --- MODEL KEYWORD FILTER (OR logic) ---
-        # We search for models that contain ANY of the keywords from the parsed model.
         if parsed_vehicle.get("model"):
             model_keywords = [kw for kw in re.split(r'\s+|-', parsed_vehicle["model"]) if len(kw) > 1]
             if model_keywords:
-                # Create a list of individual ILIKE conditions
-                conditions = [VehicleBatteryFitment.vehicle_model.ilike(f'%{keyword}%') for keyword in model_keywords]
-                # Apply them all at once with an OR condition
-                query_builder = query_builder.filter(or_(*conditions))
-                logger.info(f"Filtering by MODEL keywords (OR): {model_keywords}")
-
-        # --- YEAR FILTER ---
-        # Check if the parsed year falls within the fitment's start/end range.
+                conditions = [VehicleBatteryFitment.vehicle_model.op('~*')(r'\y{}\y'.format(re.escape(keyword))) for keyword in model_keywords]
+                query_builder = query_builder.filter(and_(*conditions))
+        
         if parsed_vehicle.get("year"):
             year = parsed_vehicle["year"]
-            query_builder = query_builder.filter(
-                and_(
-                    VehicleBatteryFitment.year_start <= year,
-                    or_(
-                        VehicleBatteryFitment.year_end >= year,
-                        VehicleBatteryFitment.year_end == None # Handle 'Present'
-                    )
-                )
-            )
-            logger.info(f"Filtering by YEAR: {year}")
+            query_builder = query_builder.filter(and_(
+                VehicleBatteryFitment.year_start <= year,
+                or_(VehicleBatteryFitment.year_end >= year, VehicleBatteryFitment.year_end.is_(None))
+            ))
 
-        # Execute the precise query
-        precise_fitments = query_builder.limit(10).all()
-        logger.info(f"Precise query found {len(precise_fitments)} fitments for parsed data: {parsed_vehicle}")
+        candidate_fitments = query_builder.limit(10).all()
+        logger.info(f"Stage 1 DB query found {len(candidate_fitments)} candidate(s) for: {parsed_vehicle}")
 
     except Exception as e:
-        logger.exception(f"Precise search failed for query '{user_query}': {e}")
+        logger.exception(f"Stage 1 DB search failed for query '{user_query}': {e}")
         return {}
 
-    # 3. Handle the results
-    if not precise_fitments:
-        # The specific vehicle wasn't found. This is a "clean" failure.
+    # --- Stage 2: Secondary In-Memory Filtering (Precise) ---
+    final_fitments = candidate_fitments
+    if len(candidate_fitments) > 1 and parsed_vehicle.get("engine_details"):
+        engine_keywords_str = parsed_vehicle["engine_details"].lower()
+        engine_keywords = set(re.findall(r'\w+', engine_keywords_str))
+        logger.info(f"Stage 2 Filtering: Applying engine keywords {engine_keywords} to {len(candidate_fitments)} candidates.")
+        
+        filtered_results = []
+        for fitment in candidate_fitments:
+            searchable_text = " ".join(filter(None, [fitment.vehicle_model, fitment.engine_details, fitment.notes])).lower()
+            if all(keyword in searchable_text for keyword in engine_keywords):
+                filtered_results.append(fitment)
+        
+        if filtered_results:
+            logger.info(f"Stage 2 Filtering: Reduced candidates to {len(filtered_results)} final fitment(s).")
+            final_fitments = filtered_results
+        else:
+            logger.warning("Stage 2 Filtering: Engine details eliminated all candidates. Proceeding with original list.")
+
+    # --- Final Result Handling ---
+    if not final_fitments:
         return {"status": "not_found", "message": "No pudimos encontrar la información para tu vehículo."}
 
-    if len(precise_fitments) == 1:
-        # Perfect match! We found exactly one fitment.
-        best_fitment = precise_fitments[0]
-        logger.info(f"Found a single, confident match: ID {best_fitment.fitment_id}")
-        return _format_success_response(db_session, best_fitment)
+    if len(final_fitments) == 1:
+        return _format_success_response(db_session, final_fitments[0])
     
-    # We found a few, highly-relevant options. Ask the user to choose.
-    # This is much better than asking them to choose from a list of wrong makes.
+    if len(final_fitments) > 1:
+        # Intelligent Ambiguity Resolution
+        fitment_ids = [f.fitment_id for f in final_fitments]
+        fitments_with_batteries = db_session.query(VehicleBatteryFitment).options(joinedload(VehicleBatteryFitment.compatible_battery_products)).filter(VehicleBatteryFitment.fitment_id.in_(fitment_ids)).all()
+
+        if not fitments_with_batteries or not any(f.compatible_battery_products for f in fitments_with_batteries):
+            return {"status": "not_found", "message": "Encontramos tu vehículo, pero no tenemos baterías compatibles registradas."}
+
+        first_battery_set = frozenset(p.id for p in fitments_with_batteries[0].compatible_battery_products)
+        if not first_battery_set:
+            return _format_clarification_response(final_fitments)
+
+        if all(frozenset(p.id for p in f.compatible_battery_products) == first_battery_set for f in fitments_with_batteries[1:]):
+            return _format_merged_success_response(fitments_with_batteries)
+        else:
+            return _format_clarification_response(final_fitments)
+
+    return {}
+
+
+def _format_merged_success_response(fitments: List[VehicleBatteryFitment]) -> Dict[str, Any]:
+    # ... (this function is unchanged) ...
+    make = fitments[0].vehicle_make
+    models = sorted(list(set(f.vehicle_model for f in fitments)))
+    model_str = " / ".join(models)
+    
+    min_year = min(f.year_start for f in fitments)
+    max_year_ends = [f.year_end for f in fitments if f.year_end is not None]
+    max_year = max(max_year_ends) if max_year_ends else None
+    year_range = f"{min_year}-{max_year or 'Presente'}"
+    
+    vehicle_key = f"{make} {model_str} ({year_range})"
+    
+    battery_list = []
+    seen_battery_ids = set()
+    for battery in fitments[0].compatible_battery_products:
+        if battery.id not in seen_battery_ids:
+            battery_list.append({
+                "brand": battery.brand, "model_code": battery.model_code,
+                "warranty_info": f"{battery.warranty_months} meses" if battery.warranty_months else "No especificada",
+                "price_regular": float(battery.price_regular) if battery.price_regular is not None else None,
+                "price_discount_fx": float(battery.price_discount_fx) if battery.price_discount_fx is not None else None,
+            })
+            seen_battery_ids.add(battery.id)
+            
+    return {"status": "success", "results": {vehicle_key: battery_list}}
+
+
+def _format_clarification_response(fitments: List[VehicleBatteryFitment]) -> Dict[str, Any]:
+    # ... (this function is unchanged) ...
     options_map = {}
-    for fitment in precise_fitments:
+    for fitment in fitments:
         year_range = f"{fitment.year_start}-{fitment.year_end or 'Presente'}"
         key = f"{fitment.vehicle_make} {fitment.vehicle_model} ({year_range})"
-        options_map[key] = fitment
+        if fitment.engine_details:
+             key = f"{fitment.vehicle_make} {fitment.vehicle_model} {fitment.engine_details} ({year_range})"
+        if key not in options_map:
+            options_map[key] = fitment
 
-    logger.info(f"Found multiple relevant options. Asking user for clarification.")
     return {
         "status": "clarification_needed",
         "message": "Encontré algunas versiones que podrían coincidir. Para darte la batería correcta, por favor selecciona tu vehículo:",
@@ -125,14 +253,14 @@ def find_batteries_for_vehicle(
 
 
 def _format_success_response(db_session: Session, fitment: VehicleBatteryFitment) -> Dict[str, Any]:
-    """Helper function to fetch batteries for a fitment and format the final response."""
+    # ... (this function is unchanged) ...
     fitment_with_batteries = db_session.query(VehicleBatteryFitment).options(
         joinedload(VehicleBatteryFitment.compatible_battery_products)
     ).get(fitment.fitment_id)
     
     if not fitment_with_batteries or not fitment_with_batteries.compatible_battery_products:
         logger.warning(f"Fitment {fitment.fitment_id} found but has no linked batteries.")
-        return {}
+        return {"status": "not_found", "message": "Encontramos tu vehículo, pero no tenemos baterías compatibles registradas."}
 
     battery_list = []
     for battery in fitment_with_batteries.compatible_battery_products:
@@ -151,36 +279,28 @@ def _format_success_response(db_session: Session, fitment: VehicleBatteryFitment
 
 # --- Add/Update Battery Product ---
 def add_or_update_battery_product(
+    # ... (this function is unchanged) ...
     session: Session,
     battery_id: str,
     battery_data: Dict[str, Any]
 ) -> Tuple[bool, str]:
-    """
-    Adds a new battery product or updates an existing one.
-    The Product model is now used exclusively for batteries.
-    """
     if not battery_id:
         return False, "Missing battery_id."
     if not battery_data or not isinstance(battery_data, dict):
         return False, "Missing or invalid battery_data."
-
     log_prefix = f"BatteryProduct DB Upsert (ID='{battery_id}'):"
-
     try:
         entry = session.query(Product).filter(Product.id == battery_id).first()
         action_taken = ""
         updated_fields_details = []
-
-        if entry: # Update existing battery
+        if entry:
             logger.info(f"{log_prefix} Found existing battery. Checking for updates.")
             action_taken = "updated"
             changed = False
             for key, new_value in battery_data.items():
                 if hasattr(entry, key):
                     current_value = getattr(entry, key)
-                    # --- MODIFICATION START ---
                     if key in ["price_regular", "price_discount_fx"]:
-                        # Handle None gracefully for price fields
                         new_decimal_value = None
                         if new_value is not None:
                             try:
@@ -188,50 +308,39 @@ def add_or_update_battery_product(
                             except (InvalidDecimalOperation, TypeError):
                                 logger.warning(f"{log_prefix} Invalid decimal value for {key}: {new_value}. Setting to None.")
                                 new_decimal_value = None
-                        
                         if current_value != new_decimal_value:
                             setattr(entry, key, new_decimal_value)
                             changed = True
                             updated_fields_details.append(f"{key}: {current_value} -> {new_decimal_value}")
-                    # --- MODIFICATION END ---
                     elif current_value != new_value:
                         setattr(entry, key, new_value)
                         changed = True
                         updated_fields_details.append(f"{key}: {current_value} -> {new_value}")
-            
             if not changed:
                 action_taken = "skipped_no_change"
                 logger.info(f"{log_prefix} No changes detected. Skipping DB write.")
                 return True, action_taken
             else:
                 logger.info(f"{log_prefix} Changes detected: {'; '.join(updated_fields_details)}")
-        else: # Add new battery
+        else:
             logger.info(f"{log_prefix} New battery. Adding to DB.")
             action_taken = "added_new"
             init_data = battery_data.copy()
             init_data['id'] = battery_id
-            
-            # --- MODIFICATION START ---
-            # Handle regular price
             if "price_regular" in init_data and init_data["price_regular"] is not None:
                 try:
                     init_data["price_regular"] = Decimal(str(init_data["price_regular"])).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
                 except (InvalidDecimalOperation, TypeError):
                     logger.error(f"{log_prefix} Invalid decimal for new product price_regular: {init_data['price_regular']}. Setting to None.")
                     init_data["price_regular"] = None
-
-            # Handle discounted price
             if "price_discount_fx" in init_data and init_data["price_discount_fx"] is not None:
                 try:
                     init_data["price_discount_fx"] = Decimal(str(init_data["price_discount_fx"])).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
                 except (InvalidDecimalOperation, TypeError):
                     logger.warning(f"{log_prefix} Invalid decimal for new product price_discount_fx: {init_data['price_discount_fx']}. Setting to None.")
                     init_data["price_discount_fx"] = None
-            # --- MODIFICATION END ---
-
             entry = Product(**init_data)
             session.add(entry)
-        
         session.commit()
         logger.info(f"{log_prefix} Battery successfully {action_taken}.")
         return True, action_taken
@@ -244,7 +353,7 @@ def add_or_update_battery_product(
         logger.exception(f"{log_prefix} Unexpected error processing: {exc}")
         return False, f"db_unexpected_error: {str(exc)}"
 
-# --- Update Battery Prices ---
+# --- [The rest of the functions (update_battery_product_prices, etc.) remain unchanged] ---
 def update_battery_product_prices(
     session: Session,
     battery_product_id: str,
@@ -374,7 +483,6 @@ def update_battery_fields_by_brand_and_model(
     else:
         return updated
 
-# --- Manage Vehicle Fitments ---
 def add_vehicle_fitment_with_links(
     session: Session,
     fitment_data: Dict[str, Any],
@@ -416,49 +524,32 @@ def get_battery_product_by_id(session: Session, battery_product_id: str) -> Opti
         return result
     return None
 
-# --- Cashea Financing Logic ---
 def get_cashea_financing_options(
     session: Session, 
     product_price: float,
     user_level: str,
     apply_discount: bool = False
 ) -> Dict[str, Any]:
-    """
-    Calculates a specific Cashea financing plan for a given product price and user level.
-    - If apply_discount is False, it calculates the standard plan (for Bolivares).
-    - If apply_discount is True, it applies the special discount logic (for Divisas).
-    """
     try:
         price = Decimal(str(product_price))
-        
-        # Query for the specific rule for the user's level.
         rule = session.query(FinancingRule).filter_by(provider='Cashea', level_name=user_level).first()
-        
         if not rule:
             logger.error(f"No financing rule found for Cashea and level '{user_level}'.")
             return {"status": "error", "message": f"No se encontró una regla de financiamiento para Cashea Nivel '{user_level}'."}
-
         base_price_for_financing = price
         discount_amount = Decimal('0.00')
         discount_applied_percent = 0.0
-
         if apply_discount and rule.provider_discount_percentage is not None and rule.provider_discount_percentage > 0:
             logger.info(f"Executing DIVISAS discount logic for {user_level}: Applying discount to total price FIRST.")
-            # Divisas path: Discount is applied to the TOTAL product price first.
             discount_amount = (price * rule.provider_discount_percentage).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             base_price_for_financing = price - discount_amount
             discount_applied_percent = float(rule.provider_discount_percentage * 100)
-        
-        # All subsequent calculations are based on the (potentially discounted) price.
         initial_payment_final = (base_price_for_financing * rule.initial_payment_percentage).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         remaining_balance = base_price_for_financing - initial_payment_final
-        
         if rule.installments and rule.installments > 0:
             installment_amount = (remaining_balance / rule.installments).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         else:
             installment_amount = remaining_balance.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) if remaining_balance > 0 else Decimal('0.00')
-
-        # The function now returns a single plan object, not a list.
         plan = {
             "level": rule.level_name,
             "initial_payment": float(initial_payment_final),
@@ -468,34 +559,21 @@ def get_cashea_financing_options(
             "discount_applied_percent": discount_applied_percent,
             "total_discount_amount": float(discount_amount)
         }
-            
         return {"status": "success", "original_product_price": product_price, "financing_plan": plan}
     except Exception as e:
         logger.error(f"Error calculating Cashea financing options: {e}", exc_info=True)
         return {"status": "error", "message": f"Error interno del servidor al calcular el financiamiento: {e}"}
 
-
-# --- NEW FUNCTION FOR UPDATING FINANCING RULES ---
 def update_financing_rules(session: Session, provider_name: str, new_rules: List[Dict[str, Any]]) -> Tuple[bool, Dict[str, int]]:
-    """
-    Deletes all existing rules for a given provider and inserts new ones.
-    Returns a tuple of (success_status, summary_details).
-    """
     summary = {"deleted": 0, "inserted": 0}
-    
-    # 1. Delete old rules for the specified provider
     deleted_rows_count = session.query(FinancingRule).filter_by(provider=provider_name).delete(synchronize_session=False)
     summary["deleted"] = deleted_rows_count
     logger.info(f"Deleted {deleted_rows_count} old financing rules for provider '{provider_name}'.")
-
-    # 2. Insert new rules
     inserted_count = 0
     for rule_data in new_rules:
-        # Basic validation
         if not all(k in rule_data for k in ['level_name', 'initial_payment_percentage', 'installments', 'provider_discount_percentage']):
             logger.warning(f"Skipping invalid rule data: {rule_data}")
             continue
-
         rule = FinancingRule(
             provider=provider_name,
             level_name=rule_data.get('level_name'),
@@ -505,9 +583,6 @@ def update_financing_rules(session: Session, provider_name: str, new_rules: List
         )
         session.add(rule)
         inserted_count += 1
-    
     summary["inserted"] = inserted_count
     logger.info(f"Staged {inserted_count} new financing rules for provider '{provider_name}'.")
-
     return True, summary
-# --- END OF NEW FUNCTION ---
